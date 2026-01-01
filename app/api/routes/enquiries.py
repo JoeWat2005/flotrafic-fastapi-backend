@@ -83,3 +83,25 @@ def update_enquiry_status(
     enquiry.status = status
     db.commit()
     return {"success": True}
+
+@router.delete("/{enquiry_id}", response_model=dict)
+def delete_enquiry(
+    enquiry_id: int,
+    db: Session = Depends(get_db),
+):
+    enquiry = db.query(Enquiry).get(enquiry_id)
+
+    if not enquiry:
+        raise HTTPException(status_code=404, detail="Enquiry not found")
+
+    if enquiry.bookings:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete enquiry with existing booking"
+        )
+
+    db.delete(enquiry)
+    db.commit()
+
+    return {"success": True}
+

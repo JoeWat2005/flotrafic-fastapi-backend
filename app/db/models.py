@@ -11,6 +11,7 @@ class Business(Base):
     name = Column(String, nullable=False)
     tier = Column(String, nullable=False)  # "foundation"
 
+
 class Enquiry(Base):
     __tablename__ = "enquiries"
 
@@ -27,6 +28,13 @@ class Enquiry(Base):
     business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
     business = relationship("Business")
 
+    bookings = relationship(
+        "Booking",
+        back_populates="enquiry",
+        cascade="all, delete-orphan",
+    )
+
+
 class Booking(Base):
     __tablename__ = "bookings"
 
@@ -41,4 +49,4 @@ class Booking(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     business = relationship("Business")
-    enquiry = relationship("Enquiry")
+    enquiry = relationship("Enquiry", back_populates="bookings")

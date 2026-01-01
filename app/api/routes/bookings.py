@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -31,3 +31,18 @@ def get_bookings(
         .order_by(Booking.start_time)
         .all()
     )
+
+@router.delete("/{booking_id}", response_model=dict)
+def delete_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+):
+    booking = db.query(Booking).get(booking_id)
+
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    db.delete(booking)
+    db.commit()
+
+    return {"success": True}
