@@ -1,0 +1,50 @@
+# --------------------
+# Python
+# --------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# --------------------
+# Virtual environments
+# --------------------
+env/
+venv/
+.venv/
+
+# --------------------
+# Databases
+# --------------------
+*.db
+*.sqlite
+*.sqlite3
+
+# --------------------
+# Environment variables
+# --------------------
+.env
+
+# --------------------
+# Logs
+# --------------------
+*.log
+
+# --------------------
+# OS / Editor junk
+# --------------------
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# --------------------
+# Coverage / testing
+# --------------------
+.coverage
+htmlcov/
+.pytest_cache/
