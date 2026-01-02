@@ -6,6 +6,7 @@ from app.db.session import get_db
 from app.db.models import Admin
 from app.core.security import verify_password
 from app.core.jwt import create_access_token
+from app.services.audit import log_action
 
 router = APIRouter(prefix="/admin/auth", tags=["Admin Auth"])
 
@@ -25,6 +26,13 @@ def admin_login(
         form_data.password,
         admin.hashed_password,
     ):
+        log_action(
+            db=db,
+            actor_type="admin",
+            actor_id=0,
+            action="admin.login_failed",
+            details=f"username={form_data.username}",
+        )
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_access_token(

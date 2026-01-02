@@ -6,6 +6,7 @@ from app.db.session import get_db
 from app.db.models import Business
 from app.core.security import verify_password
 from app.core.jwt import create_access_token
+from app.services.audit import log_action
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -27,8 +28,13 @@ def login(
     ):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # 🚫 BLOCK SUSPENDED BUSINESSES
     if not business.is_active:
+        log_action(
+            db=db,
+            actor_type="business",
+            actor_id=business.id,
+            action="business.login_blocked",
+        )
         raise HTTPException(
             status_code=403,
             detail="Business account is suspended",
@@ -45,7 +51,3 @@ def login(
         "access_token": token,
         "token_type": "bearer",
     }
-
-
-
-

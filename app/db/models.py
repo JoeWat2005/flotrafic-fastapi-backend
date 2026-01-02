@@ -57,8 +57,20 @@ class ContactMessage(Base):
     user_agent = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+
 class Admin(Base):
     __tablename__ = "admins"
     id = Column(Integer, primary_key=True)
     username = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True)
+    actor_type = Column(String, nullable=False)  # "admin" | "business" | "system"
+    actor_id = Column(Integer, nullable=False)
+    action = Column(String, nullable=False)
+    details = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

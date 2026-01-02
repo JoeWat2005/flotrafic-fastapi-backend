@@ -11,9 +11,8 @@ from app.schemas.business import (
 )
 from app.api.deps import get_current_admin
 from app.core.security import hash_password
+from app.services.audit import log_action
 
-
-# 🔒 ALL endpoints are ADMIN-ONLY
 router = APIRouter(
     prefix="/businesses",
     tags=["Businesses"],
@@ -21,13 +20,11 @@ router = APIRouter(
 )
 
 
-# =========================
-# CREATE business
-# =========================
 @router.post("/", response_model=BusinessOut)
 def create_business(
     payload: BusinessCreate,
     db: Session = Depends(get_db),
+    admin = Depends(get_current_admin),
 ):
     existing = (
         db.query(Business)
@@ -49,27 +46,28 @@ def create_business(
     db.commit()
     db.refresh(business)
 
+    log_action(
+        db=db,
+        actor_type="admin",
+        actor_id=admin.id,
+        action="business.created",
+        details=f"business_id={business.id}",
+    )
+
     return business
 
 
-# =========================
-# LIST businesses
-# =========================
 @router.get("/", response_model=List[BusinessOut])
-def list_businesses(
-    db: Session = Depends(get_db),
-):
+def list_businesses(db: Session = Depends(get_db)):
     return db.query(Business).order_by(Business.id).all()
 
 
-# =========================
-# UPDATE business tier
-# =========================
 @router.patch("/{business_id}/tier", response_model=BusinessOut)
 def update_business_tier(
     business_id: int,
     payload: BusinessTierUpdate,
     db: Session = Depends(get_db),
+    admin = Depends(get_current_admin),
 ):
     business = db.query(Business).get(business_id)
     if not business:
@@ -77,18 +75,23 @@ def update_business_tier(
 
     business.tier = payload.tier
     db.commit()
-    db.refresh(business)
+
+    log_action(
+        db=db,
+        actor_type="admin",
+        actor_id=admin.id,
+        action="business.tier_changed",
+        details=f"business_id={business.id},tier={payload.tier}",
+    )
 
     return business
 
 
-# =========================
-# SUSPEND business 🚫
-# =========================
 @router.patch("/{business_id}/suspend", response_model=BusinessOut)
 def suspend_business(
     business_id: int,
     db: Session = Depends(get_db),
+    admin = Depends(get_current_admin),
 ):
     business = db.query(Business).get(business_id)
     if not business:
@@ -96,18 +99,23 @@ def suspend_business(
 
     business.is_active = False
     db.commit()
-    db.refresh(business)
+
+    log_action(
+        db=db,
+        actor_type="admin",
+        actor_id=admin.id,
+        action="business.suspended",
+        details=f"business_id={business.id}",
+    )
 
     return business
 
 
-# =========================
-# ACTIVATE business ✅
-# =========================
 @router.patch("/{business_id}/activate", response_model=BusinessOut)
 def activate_business(
     business_id: int,
     db: Session = Depends(get_db),
+    admin = Depends(get_current_admin),
 ):
     business = db.query(Business).get(business_id)
     if not business:
@@ -115,18 +123,23 @@ def activate_business(
 
     business.is_active = True
     db.commit()
-    db.refresh(business)
+
+    log_action(
+        db=db,
+        actor_type="admin",
+        actor_id=admin.id,
+        action="business.activated",
+        details=f"business_id={business.id}",
+    )
 
     return business
 
 
-# =========================
-# DELETE business
-# =========================
 @router.delete("/{business_id}", response_model=dict)
 def delete_business(
     business_id: int,
     db: Session = Depends(get_db),
+    admin = Depends(get_current_admin),
 ):
     business = db.query(Business).get(business_id)
     if not business:
@@ -135,7 +148,12 @@ def delete_business(
     db.delete(business)
     db.commit()
 
+    log_action(
+        db=db,
+        actor_type="admin",
+        actor_id=admin.id,
+        action="business.deleted",
+        details=f"business_id={business_id}",
+    )
+
     return {"success": True}
-
-
-

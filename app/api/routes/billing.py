@@ -1,16 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+import stripe
 
 from app.db.session import get_db
 from app.db.models import Business
 from app.api.deps import get_current_business
 from app.core import stripe as stripe_config
-import stripe
+from app.services.audit import log_action
 
-router = APIRouter(
-    prefix="/billing",
-    tags=["Billing"],
-)
+router = APIRouter(prefix="/billing", tags=["Billing"])
 
 
 @router.post("/checkout")
@@ -28,7 +26,6 @@ def create_checkout(
         else stripe_config.AUTOPILOT_PRICE_ID
     )
 
-    # Create Stripe customer if missing
     if not business.stripe_customer_id:
         customer = stripe.Customer.create(
             email=business.email,
@@ -41,15 +38,21 @@ def create_checkout(
         customer=business.stripe_customer_id,
         payment_method_types=["card"],
         mode="subscription",
-        line_items=[
-            {"price": price_id, "quantity": 1}
-        ],
+        line_items=[{"price": price_id, "quantity": 1}],
         success_url="https://yourdomain.co.uk/dashboard?billing=success",
         cancel_url="https://yourdomain.co.uk/dashboard?billing=cancel",
         metadata={
             "business_id": str(business.id),
             "tier": tier,
         },
+    )
+
+    log_action(
+        db=db,
+        actor_type="business",
+        actor_id=business.id,
+        action="billing.checkout_started",
+        details=f"tier={tier}",
     )
 
     return {"checkout_url": session.url}
