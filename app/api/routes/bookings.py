@@ -8,9 +8,12 @@ from app.schemas.booking import BookingCreate, BookingOut
 from app.api.deps import get_current_business
 from app.services.email import send_email
 
+
+# 🔒 All booking endpoints require authentication
 router = APIRouter(
     prefix="/bookings",
     tags=["Bookings"],
+    dependencies=[Depends(get_current_business)],
 )
 
 
@@ -20,6 +23,13 @@ def create_booking(
     db: Session = Depends(get_db),
     current_business: Business = Depends(get_current_business),
 ):
+    # ❌ Foundation cannot create bookings
+    if current_business.tier == "foundation":
+        raise HTTPException(
+            status_code=403,
+            detail="Upgrade required to create bookings",
+        )
+
     # 1️⃣ Validate time range
     if payload.end_time <= payload.start_time:
         raise HTTPException(
@@ -72,13 +82,14 @@ def create_booking(
         enquiry.status = "in_progress"
 
     db.commit()
+    db.refresh(booking)
 
     # 📧 Email BUSINESS
     send_email(
         to=current_business.name,  # replace with business.email later
         subject="New booking created",
         body=(
-            f"New booking created\n\n"
+            "New booking created\n\n"
             f"Start: {booking.start_time}\n"
             f"End: {booking.end_time}"
         ),
@@ -90,7 +101,7 @@ def create_booking(
             to=enquiry.email,
             subject="Your booking is confirmed",
             body=(
-                f"Your booking has been confirmed.\n\n"
+                "Your booking has been confirmed.\n\n"
                 f"Start: {booking.start_time}\n"
                 f"End: {booking.end_time}"
             ),
@@ -104,6 +115,13 @@ def get_bookings(
     db: Session = Depends(get_db),
     current_business: Business = Depends(get_current_business),
 ):
+    # ❌ Foundation cannot view bookings
+    if current_business.tier == "foundation":
+        raise HTTPException(
+            status_code=403,
+            detail="Upgrade required to view bookings",
+        )
+
     return (
         db.query(Booking)
         .filter(Booking.business_id == current_business.id)
@@ -118,6 +136,13 @@ def delete_booking(
     db: Session = Depends(get_db),
     current_business: Business = Depends(get_current_business),
 ):
+    # ❌ Foundation cannot delete bookings
+    if current_business.tier == "foundation":
+        raise HTTPException(
+            status_code=403,
+            detail="Upgrade required to manage bookings",
+        )
+
     booking = (
         db.query(Booking)
         .filter(
@@ -132,8 +157,14 @@ def delete_booking(
 
     # ✅ Capture client email BEFORE delete
     client_email = None
-    if booking.enquiry:
-        client_email = booking.enquiry.email
+    if booking.enquiry_id:
+        enquiry = (
+            db.query(Enquiry)
+            .filter(Enquiry.id == booking.enquiry_id)
+            .first()
+        )
+        if enquiry:
+            client_email = enquiry.email
 
     db.delete(booking)
     db.commit()
@@ -154,5 +185,6 @@ def delete_booking(
         )
 
     return {"success": True}
+
 
 

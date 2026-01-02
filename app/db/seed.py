@@ -9,11 +9,19 @@ def seed_business(db: Session):
     if existing:
         return
 
-    business = Business(
-        name="Flotrafic Default",
+    lowtier = Business(
+        name="lowtier",
         tier="foundation",
-        hashed_password=hash_password("password123"),
+        hashed_password=hash_password("password"),
     )
 
-    db.add(business)
+    midtier = Business(
+        name="midtier",
+        tier="managed",
+        hashed_password=hash_password("password"),
+    )
+
+    db.add_all([lowtier, midtier])
     db.commit()
+
+

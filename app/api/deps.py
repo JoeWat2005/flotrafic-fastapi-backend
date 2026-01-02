@@ -1,3 +1,4 @@
+# app/api/deps.py
 from jose import jwt, JWTError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -13,13 +14,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 def get_current_business(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
-):
+) -> Business:
     try:
-        payload = jwt.decode(
-            token,
-            SECRET_KEY,
-            algorithms=[ALGORITHM],
-        )
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -33,18 +30,21 @@ def get_current_business(
             detail="Invalid token",
         )
 
-    business_id = int(business_id)  # ✅ convert back to int
-
-    business = (
-        db.query(Business)
-        .filter(Business.id == business_id)
-        .first()
-    )
-
-    if not business:
+    # IMPORTANT: sub is stored as a string in JWT
+    try:
+        business_id_int = int(business_id)
+    except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
         )
 
+    business = db.query(Business).filter(Business.id == business_id_int).first()
+    if not business:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Business not found",
+        )
+
     return business
+
