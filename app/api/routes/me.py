@@ -25,6 +25,24 @@ def get_me(
         "name": business.name,
         "email": business.email,
         "tier": business.tier,
+        "is_active": business.is_active,
+    }
+
+
+# =========================
+# GET /me/billing
+# =========================
+@router.get("/billing")
+def get_billing(
+    business: Business = Depends(get_current_business),
+):
+    return {
+        "tier": business.tier,
+        "is_active": business.is_active,
+        "subscription_status": business.stripe_subscription_status,
+        "current_period_end": business.stripe_current_period_end,
+        "stripe_customer_id": business.stripe_customer_id,
+        "stripe_subscription_id": business.stripe_subscription_id,
     }
 
 
@@ -46,6 +64,7 @@ def update_me(
         "name": business.name,
         "email": business.email,
         "tier": business.tier,
+        "is_active": business.is_active,
     }
 
 
@@ -65,4 +84,3 @@ def change_password(
     db.commit()
 
     return {"success": True}
-

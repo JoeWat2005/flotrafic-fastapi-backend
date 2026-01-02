@@ -14,6 +14,7 @@ def seed_business(db: Session):
         email="lowtier@test.com",
         tier="foundation",
         hashed_password=hash_password("password"),
+        is_active=True,
     )
 
     midtier = Business(
@@ -21,6 +22,7 @@ def seed_business(db: Session):
         email="midtier@test.com",
         tier="managed",
         hashed_password=hash_password("password"),
+        is_active=True,
     )
 
     db.add_all([lowtier, midtier])
@@ -39,6 +41,7 @@ def seed_admin(db: Session):
 
     db.add(admin)
     db.commit()
+
 
 
 

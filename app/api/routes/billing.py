@@ -13,19 +13,42 @@ router = APIRouter(prefix="/billing", tags=["Billing"])
 
 @router.post("/checkout")
 def create_checkout(
-    tier: str,
+    tier: str | None = None,
     db: Session = Depends(get_db),
     business: Business = Depends(get_current_business),
 ):
-    if tier not in ("managed", "autopilot"):
-        raise HTTPException(status_code=400, detail="Invalid tier")
+    """
+    Creates a checkout session that ALWAYS includes:
+    - Platform & maintenance (£10/month)
+    - Optional managed OR autopilot tier
+    - Optional one-time setup fee (first checkout only)
+    """
 
-    price_id = (
-        stripe_config.MANAGED_PRICE_ID
-        if tier == "managed"
-        else stripe_config.AUTOPILOT_PRICE_ID
-    )
+    line_items = [
+        # ✅ Platform fee (ALWAYS REQUIRED)
+        {"price": stripe_config.PLATFORM_PRICE_ID, "quantity": 1},
+    ]
 
+    # Optional tier upgrade
+    if tier:
+        if tier not in ("managed", "autopilot"):
+            raise HTTPException(status_code=400, detail="Invalid tier")
+
+        tier_price = (
+            stripe_config.MANAGED_PRICE_ID
+            if tier == "managed"
+            else stripe_config.AUTOPILOT_PRICE_ID
+        )
+
+        line_items.append({"price": tier_price, "quantity": 1})
+
+    # One-time setup fee (only if never paid before)
+    if not business.stripe_subscription_id:
+        line_items.append(
+            {"price": stripe_config.SETUP_PRICE_ID, "quantity": 1}
+        )
+
+    # Create Stripe customer if needed
     if not business.stripe_customer_id:
         customer = stripe.Customer.create(
             email=business.email,
@@ -36,14 +59,14 @@ def create_checkout(
 
     session = stripe.checkout.Session.create(
         customer=business.stripe_customer_id,
-        payment_method_types=["card"],
         mode="subscription",
-        line_items=[{"price": price_id, "quantity": 1}],
+        payment_method_types=["card"],
+        line_items=line_items,
         success_url="https://yourdomain.co.uk/dashboard?billing=success",
         cancel_url="https://yourdomain.co.uk/dashboard?billing=cancel",
         metadata={
             "business_id": str(business.id),
-            "tier": tier,
+            "tier": tier or "foundation",
         },
     )
 
@@ -52,7 +75,7 @@ def create_checkout(
         actor_type="business",
         actor_id=business.id,
         action="billing.checkout_started",
-        details=f"tier={tier}",
+        details=f"tier={tier or 'foundation'}",
     )
 
     return {"checkout_url": session.url}

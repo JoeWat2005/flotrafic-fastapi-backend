@@ -16,7 +16,7 @@ def send_email(to: str, subject: str, body: str):
         print("📧 EMAIL (dev mode)")
         print("To:", to)
         print("Subject:", subject)
-        print(body)
+        print("📧 Body hidden in dev mode")
         print("📧 END EMAIL")
         return
 

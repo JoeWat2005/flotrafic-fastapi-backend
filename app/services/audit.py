@@ -9,11 +9,15 @@ def log_action(
     action: str,
     details: str | None = None,
 ):
-    log = AuditLog(
-        actor_type=actor_type,
-        actor_id=actor_id,
-        action=action,
-        details=details,
-    )
-    db.add(log)
-    db.commit()
+    try:
+        log = AuditLog(
+            actor_type=actor_type,
+            actor_id=actor_id,
+            action=action,
+            details=details,
+        )
+        db.add(log)
+        db.flush()
+    except Exception:
+        # Don't let audit logging break the real request
+        db.rollback()

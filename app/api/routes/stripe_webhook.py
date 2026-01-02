@@ -2,9 +2,11 @@ from fastapi import APIRouter, Request, HTTPException
 from sqlalchemy.orm import Session
 import stripe
 import os
+from datetime import datetime, timezone
 
 from app.db.session import SessionLocal
 from app.db.models import Business
+from app.services.audit import log_action
 
 router = APIRouter(prefix="/stripe/webhook", tags=["Stripe"])
 
@@ -26,30 +28,72 @@ async def stripe_webhook(request: Request):
     db: Session = SessionLocal()
 
     try:
-        if event["type"] == "checkout.session.completed":
-            session = event["data"]["object"]
-            business_id = int(session["metadata"]["business_id"])
-            tier = session["metadata"]["tier"]
+        event_type = event["type"]
+        data = event["data"]["object"]
 
-            business = db.query(Business).get(business_id)
-            if business:
-                business.tier = tier
-                business.stripe_subscription_id = session["subscription"]
-                db.commit()
+        if event_type in (
+            "customer.subscription.created",
+            "customer.subscription.updated",
+        ):
+            subscription_id = data["id"]
+            status = data["status"]
+            period_end = datetime.fromtimestamp(
+                data["current_period_end"], tz=timezone.utc
+            )
 
-        elif event["type"] == "customer.subscription.deleted":
-            sub = event["data"]["object"]
+            # ✅ Find by customer id (works even on first subscription)
+            customer_id = data.get("customer")
             business = (
                 db.query(Business)
-                .filter(Business.stripe_subscription_id == sub["id"])
+                .filter(Business.stripe_customer_id == customer_id)
                 .first()
             )
+
             if business:
-                business.tier = "foundation"
-                business.stripe_subscription_id = None
+                business.stripe_subscription_id = subscription_id
+                business.stripe_subscription_status = status
+                business.stripe_current_period_end = period_end
+
+                # 🔑 PLATFORM ENFORCEMENT
+                business.is_active = status in ("active", "trialing")
+
                 db.commit()
+
+                log_action(
+                    db=db,
+                    actor_type="system",
+                    actor_id=business.id,
+                    action="billing.subscription_updated",
+                    details=f"status={status}",
+                )
+
+        elif event_type == "customer.subscription.deleted":
+            subscription_id = data["id"]
+
+            business = (
+                db.query(Business)
+                .filter(Business.stripe_subscription_id == subscription_id)
+                .first()
+            )
+
+            if business:
+                business.is_active = False
+                business.tier = "foundation"
+                business.stripe_subscription_status = "cancelled"
+                business.stripe_current_period_end = None
+                business.stripe_subscription_id = None
+
+                db.commit()
+
+                log_action(
+                    db=db,
+                    actor_type="system",
+                    actor_id=business.id,
+                    action="billing.subscription_cancelled",
+                )
 
     finally:
         db.close()
 
     return {"received": True}
+
