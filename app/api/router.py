@@ -8,6 +8,8 @@ from app.api.routes import (
     business,
     contact,
     me,
+    billing,
+    stripe_webhook,
 )
 
 api_router = APIRouter()
@@ -24,3 +26,6 @@ api_router.include_router(me.router)
 # 🔒 Admin-only
 api_router.include_router(admin_auth.router)
 api_router.include_router(business.router)
+
+api_router.include_router(billing.router)
+api_router.include_router(stripe_webhook.router)
