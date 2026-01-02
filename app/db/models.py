@@ -51,3 +51,17 @@ class Booking(Base):
 
     business = relationship("Business")
     enquiry = relationship("Enquiry", back_populates="bookings")
+
+
+class ContactMessage(Base):
+    __tablename__ = "contact_messages"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
