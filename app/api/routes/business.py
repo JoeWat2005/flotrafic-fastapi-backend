@@ -5,14 +5,15 @@ from typing import List
 from app.db.session import get_db
 from app.db.models import Business
 from app.schemas.business import BusinessCreate, BusinessOut
-from app.api.admin_deps import require_admin
+from app.api.deps import get_current_admin
+from app.core.security import hash_password
 
 
 # 🔒 ALL endpoints in this router are ADMIN-ONLY
 router = APIRouter(
     prefix="/businesses",
     tags=["Businesses"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(get_current_admin)],
 )
 
 
@@ -21,14 +22,20 @@ def create_business(
     payload: BusinessCreate,
     db: Session = Depends(get_db),
 ):
-    # Prevent duplicate business names (admin-level safeguard)
-    existing = db.query(Business).filter(Business.name == payload.name).first()
+    # Prevent duplicate business email
+    existing = (
+        db.query(Business)
+        .filter(Business.email == payload.email)
+        .first()
+    )
     if existing:
         raise HTTPException(status_code=400, detail="Business already exists")
 
     business = Business(
         name=payload.name,
+        email=payload.email,
         tier=payload.tier,
+        hashed_password=hash_password(payload.password),
     )
 
     db.add(business)
@@ -59,3 +66,4 @@ def delete_business(
     db.commit()
 
     return {"success": True}
+

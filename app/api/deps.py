@@ -1,50 +1,87 @@
-# app/api/deps.py
 from jose import jwt, JWTError
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.db.models import Business
+from app.db.models import Business, Admin
 from app.core.jwt import SECRET_KEY, ALGORITHM
+from app.core.tiers import TIERS
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+# 🔑 Bearer token scheme (Swagger will show a token box)
+bearer_scheme = HTTPBearer()
 
 
+# =========================
+# 🔐 Shared token decoder
+# =========================
+def decode_token(token: str):
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+# =========================
+# 🏢 Business auth
+# =========================
 def get_current_business(
-    token: str = Depends(oauth2_scheme),
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> Business:
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
+    token = creds.credentials
+    payload = decode_token(token)
+
+    # 🚫 Admin tokens not allowed here
+    if payload.get("type") == "admin":
+        raise HTTPException(status_code=403, detail="Admin token not allowed")
 
     business_id = payload.get("sub")
     if not business_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
+        raise HTTPException(status_code=401, detail="Invalid token")
 
-    # IMPORTANT: sub is stored as a string in JWT
-    try:
-        business_id_int = int(business_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
-
-    business = db.query(Business).filter(Business.id == business_id_int).first()
+    business = db.query(Business).get(int(business_id))
     if not business:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Business not found",
-        )
+        raise HTTPException(status_code=401, detail="Business not found")
 
     return business
+
+
+# =========================
+# 🔒 Admin auth
+# =========================
+def get_current_admin(
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> Admin:
+    token = creds.credentials
+    payload = decode_token(token)
+
+    if payload.get("type") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    admin_id = payload.get("sub")
+    if not admin_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    admin = db.query(Admin).get(int(admin_id))
+    if not admin:
+        raise HTTPException(status_code=401, detail="Admin not found")
+
+    return admin
+
+
+# =========================
+# 🧱 Tier feature enforcement
+# =========================
+def require_feature(feature: str):
+    def _check(business: Business = Depends(get_current_business)):
+        allowed = TIERS.get(business.tier, {}).get(feature, False)
+        if not allowed:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Upgrade required for {feature}",
+            )
+        return business
+    return _check
 

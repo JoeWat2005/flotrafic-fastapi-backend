@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.db.models import Business
+from app.db.models import Business, Admin
 from app.core.security import hash_password
 
 
@@ -11,17 +11,34 @@ def seed_business(db: Session):
 
     lowtier = Business(
         name="lowtier",
+        email="lowtier@test.com",
         tier="foundation",
         hashed_password=hash_password("password"),
     )
 
     midtier = Business(
         name="midtier",
+        email="midtier@test.com",
         tier="managed",
         hashed_password=hash_password("password"),
     )
 
     db.add_all([lowtier, midtier])
     db.commit()
+
+
+def seed_admin(db: Session):
+    existing = db.query(Admin).first()
+    if existing:
+        return
+
+    admin = Admin(
+        username="admin",
+        hashed_password=hash_password("password"),
+    )
+
+    db.add(admin)
+    db.commit()
+
 
 

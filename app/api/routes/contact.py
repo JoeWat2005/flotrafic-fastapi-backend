@@ -7,7 +7,7 @@ from app.db.session import get_db
 from app.db.models import ContactMessage
 from app.schemas.contact import ContactCreate, ContactOut
 from app.services.email import send_email
-from app.api.admin_deps import require_admin
+from app.api.deps import get_current_admin
 
 router = APIRouter(
     prefix="/contact",
@@ -71,16 +71,13 @@ Message:
 # =========================
 # 🔒 ADMIN: list contacts
 # =========================
-@router.get(
-    "/",
-    response_model=List[ContactOut],
-    dependencies=[Depends(require_admin)],
-)
+@router.get("/", response_model=List[ContactOut])
 def list_contacts(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    admin = Depends(get_current_admin),
 ):
     query = db.query(ContactMessage)
 
@@ -104,14 +101,11 @@ def list_contacts(
 # =========================
 # 🔒 ADMIN: delete contact
 # =========================
-@router.delete(
-    "/{contact_id}",
-    response_model=dict,
-    dependencies=[Depends(require_admin)],
-)
+@router.delete("/{contact_id}", response_model=dict)
 def delete_contact(
     contact_id: int,
     db: Session = Depends(get_db),
+    admin = Depends(get_current_admin),
 ):
     contact = (
         db.query(ContactMessage)
