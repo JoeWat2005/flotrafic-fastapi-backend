@@ -6,6 +6,7 @@ from app.db.session import get_db
 from app.db.models import Booking, Enquiry, Business
 from app.schemas.booking import BookingCreate, BookingOut
 from app.api.deps import get_current_business
+from app.services.email import send_email
 
 router = APIRouter(
     prefix="/bookings",
@@ -26,7 +27,7 @@ def create_booking(
             detail="end_time must be after start_time",
         )
 
-    # 2️⃣ Prevent overlapping bookings for this business
+    # 2️⃣ Prevent overlapping bookings
     conflict = (
         db.query(Booking)
         .filter(
@@ -72,6 +73,29 @@ def create_booking(
 
     db.commit()
 
+    # 📧 Email BUSINESS
+    send_email(
+        to=current_business.name,  # replace with business.email later
+        subject="New booking created",
+        body=(
+            f"New booking created\n\n"
+            f"Start: {booking.start_time}\n"
+            f"End: {booking.end_time}"
+        ),
+    )
+
+    # 📧 Email CLIENT (only if linked to enquiry)
+    if enquiry:
+        send_email(
+            to=enquiry.email,
+            subject="Your booking is confirmed",
+            body=(
+                f"Your booking has been confirmed.\n\n"
+                f"Start: {booking.start_time}\n"
+                f"End: {booking.end_time}"
+            ),
+        )
+
     return {"success": True}
 
 
@@ -106,8 +130,29 @@ def delete_booking(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
+    # ✅ Capture client email BEFORE delete
+    client_email = None
+    if booking.enquiry:
+        client_email = booking.enquiry.email
+
     db.delete(booking)
     db.commit()
 
+    # 📧 Email BUSINESS
+    send_email(
+        to=current_business.name,
+        subject="Booking cancelled",
+        body="A booking has been cancelled.",
+    )
+
+    # 📧 Email CLIENT (if applicable)
+    if client_email:
+        send_email(
+            to=client_email,
+            subject="Your booking was cancelled",
+            body="Your booking has been cancelled.",
+        )
+
     return {"success": True}
+
 

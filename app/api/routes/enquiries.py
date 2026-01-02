@@ -6,6 +6,7 @@ from app.db.session import get_db
 from app.db.models import Enquiry, Business
 from app.schemas.enquiry import EnquiryCreate, EnquiryOut
 from app.api.deps import get_current_business
+from app.services.email import send_email
 
 router = APIRouter(
     prefix="/enquiries",
@@ -28,6 +29,18 @@ def create_enquiry(
 
     db.add(enquiry)
     db.commit()
+
+    # 📧 Email BUSINESS only
+    send_email(
+        to=current_business.name,  # replace with business.email later
+        subject="New enquiry received",
+        body=(
+            f"New enquiry received\n\n"
+            f"Name: {payload.name}\n"
+            f"Email: {payload.email}\n\n"
+            f"Message:\n{payload.message}"
+        ),
+    )
 
     return {"success": True}
 
