@@ -8,13 +8,9 @@ from app.db.models import Business, Admin
 from app.core.jwt import SECRET_KEY, ALGORITHM
 from app.core.tiers import TIERS
 
-# 🔑 Bearer token scheme (Swagger will show a token box)
 bearer_scheme = HTTPBearer()
 
 
-# =========================
-# 🔐 Shared token decoder
-# =========================
 def decode_token(token: str):
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -23,7 +19,7 @@ def decode_token(token: str):
 
 
 # =========================
-# 🏢 Business auth
+# 🏢 Business auth (HARD LOCK)
 # =========================
 def get_current_business(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -32,7 +28,7 @@ def get_current_business(
     token = creds.credentials
     payload = decode_token(token)
 
-    # 🚫 Admin tokens not allowed here
+    # 🚫 Admin tokens not allowed
     if payload.get("type") == "admin":
         raise HTTPException(status_code=403, detail="Admin token not allowed")
 
@@ -44,11 +40,18 @@ def get_current_business(
     if not business:
         raise HTTPException(status_code=401, detail="Business not found")
 
+    # 🚫 HARD SUSPENSION LOCK
+    if not business.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="Business account is suspended",
+        )
+
     return business
 
 
 # =========================
-# 🔒 Admin auth
+# 🔒 Admin auth (unchanged)
 # =========================
 def get_current_admin(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),

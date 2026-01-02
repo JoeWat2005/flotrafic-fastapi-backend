@@ -5,11 +5,11 @@ from typing import List, Optional
 from app.db.session import get_db
 from app.db.models import Enquiry, Business
 from app.schemas.enquiry import EnquiryCreate, EnquiryOut
-from app.api.deps import get_current_business
+from app.api.deps import get_current_business, require_feature
 from app.services.email import send_email
 
 
-# 🔒 All enquiry endpoints require a valid business token
+# 🔒 Enquiries: create = ALL TIERS, manage = enquiries_manage
 router = APIRouter(
     prefix="/enquiries",
     tags=["Enquiries"],
@@ -23,12 +23,6 @@ def create_enquiry(
     db: Session = Depends(get_db),
     current_business: Business = Depends(get_current_business),
 ):
-    """
-    ALL TIERS:
-    - Enquiry is stored
-    - Business is emailed
-    """
-
     enquiry = Enquiry(
         name=payload.name,
         email=payload.email,
@@ -39,9 +33,8 @@ def create_enquiry(
     db.add(enquiry)
     db.commit()
 
-    # 📧 Email BUSINESS
     send_email(
-        to=current_business.name,  # replace with business.email later
+        to=current_business.name,
         subject="New enquiry received",
         body=(
             "New enquiry received\n\n"
@@ -61,15 +54,8 @@ def get_enquiries(
     limit: int = Query(20, le=100),
     offset: int = 0,
     db: Session = Depends(get_db),
-    current_business: Business = Depends(get_current_business),
+    current_business: Business = Depends(require_feature("enquiries_manage")),
 ):
-    # ❌ Foundation cannot manage enquiries
-    if current_business.tier == "foundation":
-        raise HTTPException(
-            status_code=403,
-            detail="Upgrade required to manage enquiries",
-        )
-
     query = (
         db.query(Enquiry)
         .filter(Enquiry.business_id == current_business.id)
@@ -94,14 +80,8 @@ def get_enquiries(
 def mark_enquiry_read(
     enquiry_id: int,
     db: Session = Depends(get_db),
-    current_business: Business = Depends(get_current_business),
+    current_business: Business = Depends(require_feature("enquiries_manage")),
 ):
-    if current_business.tier == "foundation":
-        raise HTTPException(
-            status_code=403,
-            detail="Upgrade required to manage enquiries",
-        )
-
     enquiry = (
         db.query(Enquiry)
         .filter(
@@ -125,14 +105,8 @@ def update_enquiry_status(
     enquiry_id: int,
     status: str = Query(..., pattern="^(new|in_progress|resolved)$"),
     db: Session = Depends(get_db),
-    current_business: Business = Depends(get_current_business),
+    current_business: Business = Depends(require_feature("enquiries_manage")),
 ):
-    if current_business.tier == "foundation":
-        raise HTTPException(
-            status_code=403,
-            detail="Upgrade required to manage enquiries",
-        )
-
     enquiry = (
         db.query(Enquiry)
         .filter(
@@ -155,14 +129,8 @@ def update_enquiry_status(
 def delete_enquiry(
     enquiry_id: int,
     db: Session = Depends(get_db),
-    current_business: Business = Depends(get_current_business),
+    current_business: Business = Depends(require_feature("enquiries_manage")),
 ):
-    if current_business.tier == "foundation":
-        raise HTTPException(
-            status_code=403,
-            detail="Upgrade required to manage enquiries",
-        )
-
     enquiry = (
         db.query(Enquiry)
         .filter(
@@ -185,4 +153,5 @@ def delete_enquiry(
     db.commit()
 
     return {"success": True}
+
 

@@ -5,15 +5,15 @@ from typing import List
 from app.db.session import get_db
 from app.db.models import Booking, Enquiry, Business
 from app.schemas.booking import BookingCreate, BookingOut
-from app.api.deps import get_current_business
+from app.api.deps import require_feature
 from app.services.email import send_email
 
 
-# 🔒 All booking endpoints require authentication
+# 🔒 Bookings require the "bookings" feature
 router = APIRouter(
     prefix="/bookings",
     tags=["Bookings"],
-    dependencies=[Depends(get_current_business)],
+    dependencies=[Depends(require_feature("bookings"))],
 )
 
 
@@ -21,15 +21,8 @@ router = APIRouter(
 def create_booking(
     payload: BookingCreate,
     db: Session = Depends(get_db),
-    current_business: Business = Depends(get_current_business),
+    current_business: Business = Depends(require_feature("bookings")),
 ):
-    # ❌ Foundation cannot create bookings
-    if current_business.tier == "foundation":
-        raise HTTPException(
-            status_code=403,
-            detail="Upgrade required to create bookings",
-        )
-
     # 1️⃣ Validate time range
     if payload.end_time <= payload.start_time:
         raise HTTPException(
@@ -64,7 +57,6 @@ def create_booking(
             )
             .first()
         )
-
         if not enquiry:
             raise HTTPException(status_code=404, detail="Enquiry not found")
 
@@ -77,7 +69,6 @@ def create_booking(
 
     db.add(booking)
 
-    # 3️⃣ Auto-update enquiry status
     if enquiry:
         enquiry.status = "in_progress"
 
@@ -86,7 +77,7 @@ def create_booking(
 
     # 📧 Email BUSINESS
     send_email(
-        to=current_business.name,  # replace with business.email later
+        to=current_business.name,  # replace with email later
         subject="New booking created",
         body=(
             "New booking created\n\n"
@@ -95,7 +86,7 @@ def create_booking(
         ),
     )
 
-    # 📧 Email CLIENT (only if linked to enquiry)
+    # 📧 Email CLIENT
     if enquiry:
         send_email(
             to=enquiry.email,
@@ -113,15 +104,8 @@ def create_booking(
 @router.get("/", response_model=List[BookingOut])
 def get_bookings(
     db: Session = Depends(get_db),
-    current_business: Business = Depends(get_current_business),
+    current_business: Business = Depends(require_feature("bookings")),
 ):
-    # ❌ Foundation cannot view bookings
-    if current_business.tier == "foundation":
-        raise HTTPException(
-            status_code=403,
-            detail="Upgrade required to view bookings",
-        )
-
     return (
         db.query(Booking)
         .filter(Booking.business_id == current_business.id)
@@ -134,15 +118,8 @@ def get_bookings(
 def delete_booking(
     booking_id: int,
     db: Session = Depends(get_db),
-    current_business: Business = Depends(get_current_business),
+    current_business: Business = Depends(require_feature("bookings")),
 ):
-    # ❌ Foundation cannot delete bookings
-    if current_business.tier == "foundation":
-        raise HTTPException(
-            status_code=403,
-            detail="Upgrade required to manage bookings",
-        )
-
     booking = (
         db.query(Booking)
         .filter(
@@ -155,7 +132,6 @@ def delete_booking(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    # ✅ Capture client email BEFORE delete
     client_email = None
     if booking.enquiry_id:
         enquiry = (
@@ -169,14 +145,12 @@ def delete_booking(
     db.delete(booking)
     db.commit()
 
-    # 📧 Email BUSINESS
     send_email(
         to=current_business.name,
         subject="Booking cancelled",
         body="A booking has been cancelled.",
     )
 
-    # 📧 Email CLIENT (if applicable)
     if client_email:
         send_email(
             to=client_email,
@@ -185,6 +159,7 @@ def delete_booking(
         )
 
     return {"success": True}
+
 
 
 

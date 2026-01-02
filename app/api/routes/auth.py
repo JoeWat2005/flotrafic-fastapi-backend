@@ -15,7 +15,6 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    # 🔐 Login via EMAIL (Swagger still labels this as "username")
     business = (
         db.query(Business)
         .filter(Business.email == form_data.username)
@@ -28,6 +27,13 @@ def login(
     ):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    # 🚫 BLOCK SUSPENDED BUSINESSES
+    if not business.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="Business account is suspended",
+        )
+
     token = create_access_token(
         {
             "sub": str(business.id),
@@ -39,6 +45,7 @@ def login(
         "access_token": token,
         "token_type": "bearer",
     }
+
 
 
 
