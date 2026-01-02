@@ -5,14 +5,23 @@ from typing import List
 from app.db.session import get_db
 from app.db.models import Business
 from app.schemas.business import BusinessCreate, BusinessOut
+from app.api.admin_deps import require_admin
 
-router = APIRouter(prefix="/businesses", tags=["Businesses"])
+
+# 🔒 ALL endpoints in this router are ADMIN-ONLY
+router = APIRouter(
+    prefix="/businesses",
+    tags=["Businesses"],
+    dependencies=[Depends(require_admin)],
+)
+
 
 @router.post("/", response_model=BusinessOut)
 def create_business(
     payload: BusinessCreate,
     db: Session = Depends(get_db),
 ):
+    # Prevent duplicate business names (admin-level safeguard)
     existing = db.query(Business).filter(Business.name == payload.name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Business already exists")
@@ -28,11 +37,13 @@ def create_business(
 
     return business
 
+
 @router.get("/", response_model=List[BusinessOut])
 def list_businesses(
     db: Session = Depends(get_db),
 ):
     return db.query(Business).order_by(Business.id).all()
+
 
 @router.delete("/{business_id}", response_model=dict)
 def delete_business(

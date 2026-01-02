@@ -3,13 +3,13 @@ from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
-
 class Business(Base):
     __tablename__ = "businesses"
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    tier = Column(String, nullable=False)  # "foundation"
+    tier = Column(String, nullable=False)
+
 
 
 class Enquiry(Base):
