@@ -10,6 +10,7 @@ class Business(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     tier = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
 
 
 class Enquiry(Base):

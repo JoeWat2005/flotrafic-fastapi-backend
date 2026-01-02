@@ -14,6 +14,7 @@ class BusinessOut(BaseModel):
     name: str
     email: EmailStr
     tier: str
+    is_active: bool
 
     model_config = {"from_attributes": True}
 

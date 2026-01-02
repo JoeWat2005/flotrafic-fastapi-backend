@@ -13,7 +13,7 @@ from app.api.deps import get_current_admin
 from app.core.security import hash_password
 
 
-# 🔒 ALL endpoints in this router are ADMIN-ONLY
+# 🔒 ALL endpoints are ADMIN-ONLY
 router = APIRouter(
     prefix="/businesses",
     tags=["Businesses"],
@@ -42,6 +42,7 @@ def create_business(
         email=payload.email,
         tier=payload.tier,
         hashed_password=hash_password(payload.password),
+        is_active=True,
     )
 
     db.add(business)
@@ -62,7 +63,7 @@ def list_businesses(
 
 
 # =========================
-# UPDATE business tier ⭐
+# UPDATE business tier
 # =========================
 @router.patch("/{business_id}/tier", response_model=BusinessOut)
 def update_business_tier(
@@ -75,6 +76,44 @@ def update_business_tier(
         raise HTTPException(status_code=404, detail="Business not found")
 
     business.tier = payload.tier
+    db.commit()
+    db.refresh(business)
+
+    return business
+
+
+# =========================
+# SUSPEND business 🚫
+# =========================
+@router.patch("/{business_id}/suspend", response_model=BusinessOut)
+def suspend_business(
+    business_id: int,
+    db: Session = Depends(get_db),
+):
+    business = db.query(Business).get(business_id)
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    business.is_active = False
+    db.commit()
+    db.refresh(business)
+
+    return business
+
+
+# =========================
+# ACTIVATE business ✅
+# =========================
+@router.patch("/{business_id}/activate", response_model=BusinessOut)
+def activate_business(
+    business_id: int,
+    db: Session = Depends(get_db),
+):
+    business = db.query(Business).get(business_id)
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    business.is_active = True
     db.commit()
     db.refresh(business)
 
@@ -97,5 +136,6 @@ def delete_business(
     db.commit()
 
     return {"success": True}
+
 
 
