@@ -17,3 +17,7 @@ class BusinessOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
+class BusinessTierUpdate(BaseModel):
+    tier: Literal["foundation", "managed", "autopilot"]
+
