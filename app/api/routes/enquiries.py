@@ -5,25 +5,25 @@ from typing import List, Optional
 from app.db.session import get_db
 from app.db.models import Enquiry, Business
 from app.schemas.enquiry import EnquiryCreate, EnquiryOut
+from app.api.deps import get_current_business
 
-router = APIRouter(prefix="/enquiries", tags=["Enquiries"])
+router = APIRouter(
+    prefix="/enquiries",
+    tags=["Enquiries"],
+)
 
 
 @router.post("/", response_model=dict)
 def create_enquiry(
     payload: EnquiryCreate,
-    business_id: int,
     db: Session = Depends(get_db),
+    current_business: Business = Depends(get_current_business),
 ):
-    business = db.query(Business).filter(Business.id == business_id).first()
-    if not business:
-        raise HTTPException(status_code=404, detail="Business not found")
-
     enquiry = Enquiry(
         name=payload.name,
         email=payload.email,
         message=payload.message,
-        business_id=business_id,
+        business_id=current_business.id,
     )
 
     db.add(enquiry)
@@ -34,14 +34,17 @@ def create_enquiry(
 
 @router.get("/", response_model=List[EnquiryOut])
 def get_enquiries(
-    business_id: int,
     is_read: Optional[bool] = None,
     status: Optional[str] = None,
     limit: int = Query(20, le=100),
     offset: int = 0,
     db: Session = Depends(get_db),
+    current_business: Business = Depends(get_current_business),
 ):
-    query = db.query(Enquiry).filter(Enquiry.business_id == business_id)
+    query = (
+        db.query(Enquiry)
+        .filter(Enquiry.business_id == current_business.id)
+    )
 
     if is_read is not None:
         query = query.filter(Enquiry.is_read == is_read)
@@ -61,14 +64,14 @@ def get_enquiries(
 @router.patch("/{enquiry_id}/read", response_model=dict)
 def mark_enquiry_read(
     enquiry_id: int,
-    business_id: int,
     db: Session = Depends(get_db),
+    current_business: Business = Depends(get_current_business),
 ):
     enquiry = (
         db.query(Enquiry)
         .filter(
             Enquiry.id == enquiry_id,
-            Enquiry.business_id == business_id,
+            Enquiry.business_id == current_business.id,
         )
         .first()
     )
@@ -85,15 +88,15 @@ def mark_enquiry_read(
 @router.patch("/{enquiry_id}/status", response_model=dict)
 def update_enquiry_status(
     enquiry_id: int,
-    business_id: int,
     status: str = Query(..., regex="^(new|in_progress|resolved)$"),
     db: Session = Depends(get_db),
+    current_business: Business = Depends(get_current_business),
 ):
     enquiry = (
         db.query(Enquiry)
         .filter(
             Enquiry.id == enquiry_id,
-            Enquiry.business_id == business_id,
+            Enquiry.business_id == current_business.id,
         )
         .first()
     )
@@ -110,14 +113,14 @@ def update_enquiry_status(
 @router.delete("/{enquiry_id}", response_model=dict)
 def delete_enquiry(
     enquiry_id: int,
-    business_id: int,
     db: Session = Depends(get_db),
+    current_business: Business = Depends(get_current_business),
 ):
     enquiry = (
         db.query(Enquiry)
         .filter(
             Enquiry.id == enquiry_id,
-            Enquiry.business_id == business_id,
+            Enquiry.business_id == current_business.id,
         )
         .first()
     )

@@ -7,9 +7,10 @@ class Business(Base):
     __tablename__ = "businesses"
 
     id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
+    name = Column(String, unique=True, nullable=False)
     tier = Column(String, nullable=False)
 
+    hashed_password = Column(String, nullable=False)
 
 
 class Enquiry(Base):
