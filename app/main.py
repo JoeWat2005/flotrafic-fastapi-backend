@@ -18,14 +18,14 @@ app = FastAPI(title="Flotrafic API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",     # Vite dev
-        "http://127.0.0.1:5173",     # Alt localhost
-        "https://flotrafic.co.uk",   # Prod
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://flotrafic.co.uk",
         "https://www.flotrafic.co.uk",
     ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=True,   # ← IMPORTANT
+    allow_methods=["*"],      # ← REQUIRED
+    allow_headers=["*"],      # ← REQUIRED
 )
 
 
