@@ -8,22 +8,36 @@ from app.db.session import SessionLocal
 from app.db.models import Business
 from app.services.audit import log_action
 
-router = APIRouter(prefix="/stripe/webhook", tags=["Stripe"])
+router = APIRouter(prefix="/stripe", tags=["Stripe"])
 
+# =========================
+# STRIPE CONFIG (REQUIRED)
+# =========================
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
+if not WEBHOOK_SECRET:
+    raise RuntimeError("STRIPE_WEBHOOK_SECRET is not set")
 
-@router.post("/")
+
+@router.post("/webhook")
 async def stripe_webhook(request: Request):
     payload = await request.body()
     sig = request.headers.get("stripe-signature")
 
+    if not sig:
+        raise HTTPException(status_code=400, detail="Missing Stripe signature")
+
     try:
         event = stripe.Webhook.construct_event(
-            payload, sig, WEBHOOK_SECRET
+            payload=payload,
+            sig_header=sig,
+            secret=WEBHOOK_SECRET,
         )
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid webhook")
+        raise HTTPException(status_code=400, detail="Invalid webhook payload")
 
     db: Session = SessionLocal()
 
@@ -31,44 +45,59 @@ async def stripe_webhook(request: Request):
         event_type = event["type"]
         data = event["data"]["object"]
 
-        if event_type in (
-            "customer.subscription.created",
-            "customer.subscription.updated",
-        ):
-            subscription_id = data["id"]
-            status = data["status"]
-            period_end = datetime.fromtimestamp(
-                data["current_period_end"], tz=timezone.utc
-            )
+        # =========================
+        # ACCOUNT CREATION
+        # =========================
+        if event_type == "checkout.session.completed":
+            metadata = data.get("metadata") or {}
 
-            # ✅ Find by customer id (works even on first subscription)
-            customer_id = data.get("customer")
-            business = (
+            email = metadata.get("email")
+            if not email:
+                return {"ignored": True}
+
+            existing = (
                 db.query(Business)
-                .filter(Business.stripe_customer_id == customer_id)
+                .filter(Business.email == email)
                 .first()
             )
+            if existing:
+                return {"already_exists": True}
 
-            if business:
-                business.stripe_subscription_id = subscription_id
-                business.stripe_subscription_status = status
-                business.stripe_current_period_end = period_end
+            business = Business(
+                name=metadata["name"],
+                email=email,
+                hashed_password=metadata["password_hash"],
+                tier=metadata["tier"],
+                stripe_customer_id=data.get("customer"),
+                stripe_subscription_id=data.get("subscription"),
+                stripe_subscription_status="active",
+                stripe_current_period_end=datetime.now(timezone.utc),
+                is_active=True,
+            )
 
-                # 🔑 PLATFORM ENFORCEMENT
-                business.is_active = status in ("active", "trialing")
+            db.add(business)
+            db.commit()
 
-                db.commit()
+            log_action(
+                db=db,
+                actor_type="system",
+                actor_id=business.id,
+                action="business.created_after_payment",
+                details=f"tier={business.tier}",
+            )
 
-                log_action(
-                    db=db,
-                    actor_type="system",
-                    actor_id=business.id,
-                    action="billing.subscription_updated",
-                    details=f"status={status}",
-                )
+        # =========================
+        # SUBSCRIPTION UPDATES
+        # =========================
+        elif event_type in (
+            "customer.subscription.updated",
+            "customer.subscription.deleted",
+        ):
+            subscription_id = data.get("id")
+            status = data.get("status")
 
-        elif event_type == "customer.subscription.deleted":
-            subscription_id = data["id"]
+            if not subscription_id:
+                return {"ignored": True}
 
             business = (
                 db.query(Business)
@@ -77,23 +106,11 @@ async def stripe_webhook(request: Request):
             )
 
             if business:
-                business.is_active = False
-                business.tier = "foundation"
-                business.stripe_subscription_status = "cancelled"
-                business.stripe_current_period_end = None
-                business.stripe_subscription_id = None
-
+                business.stripe_subscription_status = status
+                business.is_active = status in ("active", "trialing")
                 db.commit()
-
-                log_action(
-                    db=db,
-                    actor_type="system",
-                    actor_id=business.id,
-                    action="billing.subscription_cancelled",
-                )
 
     finally:
         db.close()
 
     return {"received": True}
-
