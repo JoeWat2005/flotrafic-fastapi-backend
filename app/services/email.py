@@ -1,32 +1,51 @@
 import os
-import smtplib
-from email.message import EmailMessage
-
-EMAIL_HOST = os.getenv("EMAIL_HOST")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-EMAIL_FROM = os.getenv("EMAIL_FROM")
+import sib_api_v3_sdk
+from sib_api_v3_sdk.rest import ApiException
 
 EMAIL_ENABLED = os.getenv("EMAIL_ENABLED", "false").lower() == "true"
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+
+if EMAIL_ENABLED and not BREVO_API_KEY:
+    raise RuntimeError("BREVO_API_KEY not set")
 
 
-def send_email(to: str, subject: str, body: str):
+# -------------------------
+# Brevo client setup
+# -------------------------
+config = sib_api_v3_sdk.Configuration()
+config.api_key["api-key"] = BREVO_API_KEY
+client = sib_api_v3_sdk.ApiClient(config)
+brevo = sib_api_v3_sdk.TransactionalEmailsApi(client)
+
+
+def send_template_email(
+    *,
+    to: str,
+    template_id: int,
+    params: dict,
+):
+    """
+    Send a Brevo transactional email using a template.
+    """
+
     if not EMAIL_ENABLED:
         print("📧 EMAIL (dev mode)")
         print("To:", to)
-        print("Subject:", subject)
-        print("📧 Body hidden in dev mode")
+        print("Template ID:", template_id)
+        print("Params:", params)
         print("📧 END EMAIL")
         return
 
-    msg = EmailMessage()
-    msg["From"] = EMAIL_FROM
-    msg["To"] = to
-    msg["Subject"] = subject
-    msg.set_content(body)
+    try:
+        email = sib_api_v3_sdk.SendSmtpEmail(
+            to=[{"email": to}],
+            template_id=template_id,
+            params=dict(params),  # ✅ THIS FIXES BLANK VARIABLES
+        )
 
-    with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
-        server.starttls()
-        server.login(EMAIL_USER, EMAIL_PASSWORD)
-        server.send_message(msg)
+        brevo.send_transac_email(email)
+
+    except ApiException as e:
+        print(f"❌ Brevo email failed: {e}")
+
+

@@ -6,7 +6,6 @@ from app.db.session import get_db
 from app.db.models import Booking, Enquiry, Business
 from app.schemas.booking import BookingCreate, BookingOut
 from app.api.deps import require_feature
-from app.services.email import send_email
 
 
 # 🔒 Bookings require the "bookings" feature
@@ -76,27 +75,6 @@ def create_booking(
     db.refresh(booking)
 
     # 📧 Email BUSINESS
-    send_email(
-        to=current_business.name,  # replace with email later
-        subject="New booking created",
-        body=(
-            "New booking created\n\n"
-            f"Start: {booking.start_time}\n"
-            f"End: {booking.end_time}"
-        ),
-    )
-
-    # 📧 Email CLIENT
-    if enquiry:
-        send_email(
-            to=enquiry.email,
-            subject="Your booking is confirmed",
-            body=(
-                "Your booking has been confirmed.\n\n"
-                f"Start: {booking.start_time}\n"
-                f"End: {booking.end_time}"
-            ),
-        )
 
     return {"success": True}
 
@@ -144,19 +122,6 @@ def delete_booking(
 
     db.delete(booking)
     db.commit()
-
-    send_email(
-        to=current_business.name,
-        subject="Booking cancelled",
-        body="A booking has been cancelled.",
-    )
-
-    if client_email:
-        send_email(
-            to=client_email,
-            subject="Your booking was cancelled",
-            body="Your booking has been cancelled.",
-        )
 
     return {"success": True}
 

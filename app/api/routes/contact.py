@@ -6,7 +6,7 @@ from typing import List, Optional
 from app.db.session import get_db
 from app.db.models import ContactMessage
 from app.schemas.contact import ContactCreate, ContactOut
-from app.services.email import send_email
+from app.services.email import send_template_email
 from app.api.deps import get_current_admin
 
 router = APIRouter(
@@ -51,19 +51,17 @@ def submit_contact(
     db.add(msg)
     db.commit()
 
-    send_email(
-        to="you@flotrafic.co.uk",
-        subject="New Flotrafic contact message",
-        body=f"""
-New contact submission
+    send_template_email(
+    to="watmoughjoe2005@gmail.com",
+    template_id=5,  # ← replace with the Brevo template ID
+    params={
+        "name": payload.name,
+        "email": payload.email,
+        "message": payload.message,
+        "ip": ip,
+    },
+)
 
-Name: {payload.name}
-Email: {payload.email}
-
-Message:
-{payload.message}
-""",
-    )
 
     return {"success": True}
 

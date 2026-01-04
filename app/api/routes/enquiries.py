@@ -6,7 +6,6 @@ from app.db.session import get_db
 from app.db.models import Enquiry, Business
 from app.schemas.enquiry import EnquiryCreate, EnquiryOut
 from app.api.deps import get_current_business, require_feature
-from app.services.email import send_email
 
 
 # 🔒 Enquiries: create = ALL TIERS, manage = enquiries_manage
@@ -33,16 +32,6 @@ def create_enquiry(
     db.add(enquiry)
     db.commit()
 
-    send_email(
-        to=current_business.name,
-        subject="New enquiry received",
-        body=(
-            "New enquiry received\n\n"
-            f"Name: {payload.name}\n"
-            f"Email: {payload.email}\n\n"
-            f"Message:\n{payload.message}"
-        ),
-    )
 
     return {"success": True, "stored": True}
 

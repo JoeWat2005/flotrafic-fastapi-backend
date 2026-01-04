@@ -1,15 +1,18 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 import os
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg2://flotrafic:flotrafic@db:5432/flotrafic"
+    "sqlite:///./dev.db"
 )
 
+# SQLite needs special flags for FastAPI
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
 )
 
 SessionLocal = sessionmaker(
