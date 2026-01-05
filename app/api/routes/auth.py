@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import stripe
@@ -53,10 +53,10 @@ def login(
 # =========================
 @router.post("/pre-register")
 def pre_register(
-    name: str,
-    email: str,
-    password: str,
-    tier: str,
+    name: str = Body(...),
+    email: str = Body(...),
+    password: str = Body(...),
+    tier: str = Body(...),
 ):
     if tier not in {"foundation", "managed", "autopilot"}:
         raise HTTPException(status_code=400, detail="Invalid tier")
@@ -80,7 +80,7 @@ def pre_register(
             "tier": tier,
             "password_hash": hash_password(password),
         },
-        success_url="http://localhost:5173/success",
+        success_url="http://localhost:5173/?signup=success",
         cancel_url="http://localhost:5173/cancel",
     )
 
