@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, HTTPException
 from sqlalchemy.orm import Session
 import stripe
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from app.db.session import SessionLocal
 from app.db.models import Business
@@ -10,9 +10,6 @@ from app.services.audit import log_action
 
 router = APIRouter(prefix="/stripe", tags=["Stripe"])
 
-# =========================
-# STRIPE CONFIG (REQUIRED)
-# =========================
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
@@ -55,13 +52,31 @@ async def stripe_webhook(request: Request):
             if not email:
                 return {"ignored": True}
 
-            existing = (
-                db.query(Business)
-                .filter(Business.email == email)
-                .first()
-            )
+            existing = db.query(Business).filter(Business.email == email).first()
             if existing:
                 return {"already_exists": True}
+
+            subscription_id = data.get("subscription")
+
+            # Defaults (safe)
+            subscription_status = "active"
+            period_end = datetime.now(timezone.utc) + timedelta(days=30)
+
+            # Try to fetch subscription details (may not be ready yet)
+            if subscription_id:
+                try:
+                    subscription = stripe.Subscription.retrieve(subscription_id)
+
+                    subscription_status = subscription.status
+
+                    if hasattr(subscription, "current_period_end"):
+                        period_end = datetime.fromtimestamp(
+                            subscription.current_period_end,
+                            tz=timezone.utc,
+                        )
+                except Exception:
+                    # Stripe eventual consistency — ignore and continue
+                    pass
 
             business = Business(
                 name=metadata["name"],
@@ -69,9 +84,9 @@ async def stripe_webhook(request: Request):
                 hashed_password=metadata["password_hash"],
                 tier=metadata["tier"],
                 stripe_customer_id=data.get("customer"),
-                stripe_subscription_id=data.get("subscription"),
-                stripe_subscription_status="active",
-                stripe_current_period_end=datetime.now(timezone.utc),
+                stripe_subscription_id=subscription_id,
+                stripe_subscription_status=subscription_status,
+                stripe_current_period_end=period_end,
                 is_active=True,
             )
 
@@ -91,11 +106,9 @@ async def stripe_webhook(request: Request):
         # =========================
         elif event_type in (
             "customer.subscription.updated",
-            "customer.subscription.deleted",
+            "invoice.paid",
         ):
             subscription_id = data.get("id")
-            status = data.get("status")
-
             if not subscription_id:
                 return {"ignored": True}
 
@@ -106,7 +119,15 @@ async def stripe_webhook(request: Request):
             )
 
             if business:
+                status = data.get("status")
                 business.stripe_subscription_status = status
+
+                if data.get("current_period_end"):
+                    business.stripe_current_period_end = datetime.fromtimestamp(
+                        data["current_period_end"],
+                        tz=timezone.utc,
+                    )
+
                 business.is_active = status in ("active", "trialing")
                 db.commit()
 

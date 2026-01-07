@@ -107,14 +107,19 @@ def require_feature(feature: str):
                     detail="Subscription payment required",
                 )
 
-            if (
-                business.stripe_current_period_end
-                and datetime.now(timezone.utc) > business.stripe_current_period_end
-            ):
-                raise HTTPException(
-                    status_code=402,
-                    detail="Subscription expired",
-                )
+            if business.stripe_current_period_end:
+                now = datetime.now(timezone.utc)
+
+                period_end = business.stripe_current_period_end
+                if period_end.tzinfo is None:
+                    period_end = period_end.replace(tzinfo=timezone.utc)
+
+                    if now > period_end:
+                        raise HTTPException(
+                        status_code=402,
+                        detail="Subscription expired",
+                    )
+
 
         return business
 

@@ -143,4 +143,44 @@ def delete_enquiry(
 
     return {"success": True}
 
+@router.get("/stats")
+def enquiry_stats(
+    db: Session = Depends(get_db),
+    business: Business = Depends(require_feature("enquiries_manage")),
+):
+    return {
+        "total": db.query(Enquiry)
+            .filter(Enquiry.business_id == business.id)
+            .count(),
 
+        "unread": db.query(Enquiry)
+            .filter(
+                Enquiry.business_id == business.id,
+                Enquiry.is_read == False,
+            )
+            .count(),
+
+        "new": db.query(Enquiry)
+            .filter(
+                Enquiry.business_id == business.id,
+                Enquiry.status == "new",
+            )
+            .count(),
+    }
+
+@router.patch("/bulk-read")
+def mark_all_read(
+    db: Session = Depends(get_db),
+    business: Business = Depends(require_feature("enquiries_manage")),
+):
+    (
+        db.query(Enquiry)
+        .filter(
+            Enquiry.business_id == business.id,
+            Enquiry.is_read == False,
+        )
+        .update({Enquiry.is_read: True})
+    )
+    db.commit()
+
+    return {"success": True}

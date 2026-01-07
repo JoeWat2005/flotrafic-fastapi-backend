@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 import stripe
+from datetime import timezone
+
 
 from app.db.session import get_db
 from app.db.models import Business
@@ -79,3 +81,33 @@ def create_checkout(
     )
 
     return {"checkout_url": session.url}
+
+@router.get("/overview")
+def billing_overview(
+    db: Session = Depends(get_db),
+    business: Business = Depends(get_current_business),
+):
+    return {
+        "tier": business.tier,
+        "subscription_status": business.stripe_subscription_status,
+        "current_period_end": (
+            business.stripe_current_period_end.astimezone(timezone.utc).isoformat()
+            if business.stripe_current_period_end
+            else None
+        ),
+        "is_active": business.is_active,
+    }
+
+@router.post("/portal")
+def billing_portal(
+    business: Business = Depends(get_current_business),
+):
+    if not business.stripe_customer_id:
+        raise HTTPException(status_code=400, detail="No Stripe customer")
+
+    session = stripe.billing_portal.Session.create(
+        customer=business.stripe_customer_id,
+        return_url="https://yourdomain.co.uk/dashboard/billing",
+    )
+
+    return {"url": session.url}
