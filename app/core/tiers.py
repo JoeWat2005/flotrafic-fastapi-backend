@@ -9,7 +9,7 @@ TIERS = {
         "bookings": True,
         "ai_calls": False,
     },
-    "ai": {
+    "autopilot": {
         "enquiries_manage": True,
         "bookings": True,
         "ai_calls": True,

@@ -39,7 +39,10 @@ def login(
         form_data.password,
         business.hashed_password,
     ):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password",
+        )
 
     if not business.is_active:
         raise HTTPException(
@@ -62,34 +65,66 @@ def pre_register(
     payload: PreRegisterRequest,
     db: Session = Depends(get_db),
 ):
+    # -------------------------
     # CAPTCHA
+    # -------------------------
     verify_captcha(payload.captcha_token)
 
-    # PASSWORD RULES
+    # -------------------------
+    # PASSWORD VALIDATION
+    # -------------------------
     PreRegisterRequest.validate_password(payload.password)
     PreRegisterRequest.validate_confirm(
         payload.password,
         payload.confirm_password,
     )
 
-    # DUPLICATE EMAIL
-    existing = (
+    # -------------------------
+    # DUPLICATE EMAIL CHECK
+    # -------------------------
+    existing_email = (
         db.query(Business)
-        .filter(Business.email == payload.email)
+        .filter(Business.email == payload.email.lower())
         .first()
     )
-    if existing:
+    if existing_email:
         raise HTTPException(
             status_code=400,
             detail="An account with this email already exists",
         )
 
+    # -------------------------
+    # DUPLICATE BUSINESS NAME CHECK
+    # -------------------------
+    existing_name = (
+        db.query(Business)
+        .filter(Business.name.ilike(payload.name.strip()))
+        .first()
+    )
+    if existing_name:
+        raise HTTPException(
+            status_code=400,
+            detail="A business with this name already exists",
+        )
+
+    # -------------------------
+    # STRIPE PRICE MAP
+    # -------------------------
     tier_price_map = {
         "foundation": stripe_config.FOUNDATION_PRICE_ID,
         "managed": stripe_config.MANAGED_PRICE_ID,
         "autopilot": stripe_config.AUTOPILOT_PRICE_ID,
     }
 
+    if payload.tier not in tier_price_map:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid subscription tier selected",
+        )
+
+    # -------------------------
+    # CREATE STRIPE CHECKOUT
+    # -------------------------
     session = stripe.checkout.Session.create(
         mode="subscription",
         payment_method_types=["card"],
@@ -99,7 +134,7 @@ def pre_register(
         ],
         metadata={
             "name": payload.name,
-            "email": payload.email,
+            "email": payload.email.lower(),
             "tier": payload.tier,
             "password_hash": hash_password(payload.password),
         },
@@ -108,3 +143,5 @@ def pre_register(
     )
 
     return {"checkout_url": session.url}
+
+
