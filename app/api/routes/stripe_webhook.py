@@ -1,20 +1,43 @@
 from fastapi import APIRouter, Request, HTTPException
 from sqlalchemy.orm import Session
 import stripe
-import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from app.db.session import SessionLocal
 from app.db.models import Business
 from app.services.audit import log_action
+from app.core.config import settings
 
 router = APIRouter(prefix="/stripe", tags=["Stripe"])
 
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+stripe.api_key = settings.STRIPE_SECRET_KEY
+WEBHOOK_SECRET = settings.STRIPE_WEBHOOK_SECRET
 
-if not WEBHOOK_SECRET:
-    raise RuntimeError("STRIPE_WEBHOOK_SECRET is not set")
+
+def _ts_to_dt(ts: int | None):
+    if not ts:
+        return None
+    return datetime.fromtimestamp(ts, tz=timezone.utc)
+
+
+def _safe_stripe_subscription_refresh(business: Business):
+    """
+    Best-effort refresh of subscription status + period end.
+    Never raises.
+    """
+    sub_id = business.stripe_subscription_id
+    if not sub_id:
+        return
+
+    try:
+        sub = stripe.Subscription.retrieve(sub_id)
+        business.stripe_subscription_status = getattr(sub, "status", None)
+        business.stripe_current_period_end = _ts_to_dt(
+            getattr(sub, "current_period_end", None)
+        )
+    except Exception:
+        # Stripe eventual consistency / transient errors – ignore
+        return
 
 
 @router.post("/webhook")
@@ -22,6 +45,7 @@ async def stripe_webhook(request: Request):
     payload = await request.body()
     sig = request.headers.get("stripe-signature")
 
+    # Stripe expects 4xx on signature/payload issues
     if not sig:
         raise HTTPException(status_code=400, detail="Missing Stripe signature")
 
@@ -39,99 +63,131 @@ async def stripe_webhook(request: Request):
     db: Session = SessionLocal()
 
     try:
-        event_type = event["type"]
-        data = event["data"]["object"]
+        event_type = event.get("type")
+        obj = (event.get("data") or {}).get("object") or {}
+
+        # Default: do nothing but acknowledge
+        handled = False
 
         # =========================
-        # ACCOUNT CREATION
+        # CHECKOUT COMPLETED
         # =========================
         if event_type == "checkout.session.completed":
-            metadata = data.get("metadata") or {}
+            metadata = obj.get("metadata") or {}
+            business_id = metadata.get("business_id")
 
-            email = metadata.get("email")
-            if not email:
-                return {"ignored": True}
-
-            existing = db.query(Business).filter(Business.email == email).first()
-            if existing:
-                return {"already_exists": True}
-
-            subscription_id = data.get("subscription")
-
-            # Defaults (safe)
-            subscription_status = "active"
-            period_end = datetime.now(timezone.utc) + timedelta(days=30)
-
-            # Try to fetch subscription details (may not be ready yet)
-            if subscription_id:
-                try:
-                    subscription = stripe.Subscription.retrieve(subscription_id)
-
-                    subscription_status = subscription.status
-
-                    if hasattr(subscription, "current_period_end"):
-                        period_end = datetime.fromtimestamp(
-                            subscription.current_period_end,
-                            tz=timezone.utc,
-                        )
-                except Exception:
-                    # Stripe eventual consistency — ignore and continue
-                    pass
-
-            business = Business(
-                name=metadata["name"],
-                email=email,
-                hashed_password=metadata["password_hash"],
-                tier=metadata["tier"],
-                stripe_customer_id=data.get("customer"),
-                stripe_subscription_id=subscription_id,
-                stripe_subscription_status=subscription_status,
-                stripe_current_period_end=period_end,
-                is_active=True,
-            )
-
-            db.add(business)
-            db.commit()
-
-            log_action(
-                db=db,
-                actor_type="system",
-                actor_id=business.id,
-                action="business.created_after_payment",
-                details=f"tier={business.tier}",
-            )
-
-        # =========================
-        # SUBSCRIPTION UPDATES
-        # =========================
-        elif event_type in (
-            "customer.subscription.updated",
-            "invoice.paid",
-        ):
-            subscription_id = data.get("id")
-            if not subscription_id:
-                return {"ignored": True}
-
-            business = (
-                db.query(Business)
-                .filter(Business.stripe_subscription_id == subscription_id)
-                .first()
-            )
+            if business_id:
+                business = db.query(Business).get(int(business_id))
+            else:
+                business = None
 
             if business:
-                status = data.get("status")
-                business.stripe_subscription_status = status
+                # Persist Stripe IDs from checkout session
+                business.stripe_customer_id = obj.get("customer") or business.stripe_customer_id
+                business.stripe_subscription_id = obj.get("subscription") or business.stripe_subscription_id
 
-                if data.get("current_period_end"):
-                    business.stripe_current_period_end = datetime.fromtimestamp(
-                        data["current_period_end"],
-                        tz=timezone.utc,
-                    )
+                # Best-effort subscription refresh
+                _safe_stripe_subscription_refresh(business)
 
-                business.is_active = status in ("active", "trialing")
+                # Activate if Stripe says active/trialing
+                if business.stripe_subscription_status in ("active", "trialing"):
+                    business.is_active = True
+
                 db.commit()
+
+                log_action(
+                    db=db,
+                    actor_type="system",
+                    actor_id=business.id,
+                    action="stripe.checkout.session.completed",
+                    details=f"sub={business.stripe_subscription_id} status={business.stripe_subscription_status}",
+                )
+
+                handled = True
+
+        # =========================
+        # SUBSCRIPTION UPDATED
+        # =========================
+        elif event_type == "customer.subscription.updated":
+            sub_id = obj.get("id")
+            if sub_id:
+                business = (
+                    db.query(Business)
+                    .filter(Business.stripe_subscription_id == sub_id)
+                    .first()
+                )
+            else:
+                business = None
+
+            if business:
+                status = obj.get("status")
+                business.stripe_subscription_status = status
+                business.stripe_current_period_end = _ts_to_dt(obj.get("current_period_end"))
+
+                # Hard lock based on Stripe status
+                business.is_active = status in ("active", "trialing")
+
+                db.commit()
+
+                log_action(
+                    db=db,
+                    actor_type="system",
+                    actor_id=business.id,
+                    action="stripe.subscription.updated",
+                    details=f"status={status}",
+                )
+
+                handled = True
+
+        # =========================
+        # INVOICE PAID (backup activation signal)
+        # =========================
+        elif event_type == "invoice.paid":
+            sub_id = obj.get("subscription")
+            cust_id = obj.get("customer")
+
+            business = None
+            if sub_id:
+                business = (
+                    db.query(Business)
+                    .filter(Business.stripe_subscription_id == sub_id)
+                    .first()
+                )
+
+            # Fallback: match by customer
+            if not business and cust_id:
+                business = (
+                    db.query(Business)
+                    .filter(Business.stripe_customer_id == cust_id)
+                    .first()
+                )
+
+            if business:
+                # If we got sub_id but DB doesn't have it yet, store it
+                if sub_id and not business.stripe_subscription_id:
+                    business.stripe_subscription_id = sub_id
+
+                # Best-effort refresh to get accurate status + period end
+                _safe_stripe_subscription_refresh(business)
+
+                if business.stripe_subscription_status in ("active", "trialing"):
+                    business.is_active = True
+
+                db.commit()
+
+                log_action(
+                    db=db,
+                    actor_type="system",
+                    actor_id=business.id,
+                    action="stripe.invoice.paid",
+                    details=f"sub={sub_id}",
+                )
+
+                handled = True
+
+        # Acknowledge everything to Stripe
+        return {"status": "ok", "handled": handled}
 
     finally:
         db.close()
 
-    return {"received": True}

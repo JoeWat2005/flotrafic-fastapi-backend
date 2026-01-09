@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -12,26 +11,24 @@ router = APIRouter(prefix="/admin/auth", tags=["Admin Auth"])
 
 
 @router.post("/login")
-def admin_login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db),
-):
+def admin_login(payload: dict, db: Session = Depends(get_db)):
+    username = (payload.get("username") or "").strip()
+    password = payload.get("password") or ""
+
     admin = (
         db.query(Admin)
-        .filter(Admin.username == form_data.username)
+        .filter(Admin.username == username)
         .first()
     )
 
-    if not admin or not verify_password(
-        form_data.password,
-        admin.hashed_password,
-    ):
+    if not admin or not verify_password(password, admin.hashed_password):
+        # Keep external error minimal; log details internally
         log_action(
             db=db,
             actor_type="admin",
             actor_id=0,
             action="admin.login_failed",
-            details=f"username={form_data.username}",
+            details=f"username={username}",
         )
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -42,7 +39,4 @@ def admin_login(
         }
     )
 
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-    }
+    return {"access_token": token, "token_type": "bearer"}

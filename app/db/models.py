@@ -7,6 +7,7 @@ from app.db.base import Base
 class Business(Base):
     __tablename__ = "businesses"
 
+    # business features
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False, index=True)
@@ -19,6 +20,16 @@ class Business(Base):
     stripe_subscription_id = Column(String, nullable=True)
     stripe_subscription_status = Column(String, nullable=True)
     stripe_current_period_end = Column(DateTime(timezone=True), nullable=True)
+
+    # email verification
+    email_verified = Column(Boolean, default=False, nullable=False)
+    email_verification_code = Column(String, nullable=True, index=True)
+    email_verification_expires = Column(DateTime(timezone=True), nullable=True)
+
+    # password reset
+    password_reset_code = Column(String, nullable=True)
+    password_reset_expires = Column(DateTime(timezone=True), nullable=True)
+
 
 
 class Enquiry(Base):

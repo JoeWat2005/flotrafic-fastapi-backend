@@ -13,9 +13,11 @@ router = APIRouter(
 )
 
 
-# =========================
+# -------------------------------------------------------------------
 # GET /me
-# =========================
+# - identity endpoint
+# - no branching
+# -------------------------------------------------------------------
 @router.get("/")
 def get_me(
     business: Business = Depends(get_current_business),
@@ -29,9 +31,11 @@ def get_me(
     }
 
 
-# =========================
+# -------------------------------------------------------------------
 # GET /me/billing
-# =========================
+# - informational only
+# - no validation logic
+# -------------------------------------------------------------------
 @router.get("/billing")
 def get_billing(
     business: Business = Depends(get_current_business),
@@ -46,18 +50,19 @@ def get_billing(
     }
 
 
-# =========================
+# -------------------------------------------------------------------
 # PATCH /me
-# =========================
+# - frontend gates name validity
+# - backend enforces ownership only
+# -------------------------------------------------------------------
 @router.patch("/")
 def update_me(
     payload: UpdateMe,
     db: Session = Depends(get_db),
     business: Business = Depends(get_current_business),
 ):
-    business.name = payload.name
+    business.name = payload.name.strip()
     db.commit()
-    db.refresh(business)
 
     return {
         "id": business.id,
@@ -68,19 +73,25 @@ def update_me(
     }
 
 
-# =========================
+# -------------------------------------------------------------------
 # POST /me/change-password
-# =========================
+# - frontend gates password strength
+# - backend enforces auth boundary
+# -------------------------------------------------------------------
 @router.post("/change-password")
 def change_password(
     payload: ChangePassword,
     db: Session = Depends(get_db),
     business: Business = Depends(get_current_business),
 ):
+    # Auth boundary: must know current password
     if not verify_password(payload.old_password, business.hashed_password):
-        raise HTTPException(status_code=400, detail="Old password is incorrect")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid credentials",
+        )
 
     business.hashed_password = hash_password(payload.new_password)
     db.commit()
 
-    return {"success": True}
+    return {"status": "ok"}

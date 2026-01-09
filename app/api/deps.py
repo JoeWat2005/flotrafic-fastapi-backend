@@ -2,7 +2,7 @@ from jose import jwt, JWTError
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from app.db.session import get_db
 from app.db.models import Business, Admin
@@ -11,65 +11,89 @@ from app.core.tiers import TIERS
 
 bearer_scheme = HTTPBearer()
 
-# Grace period for billing issues (past_due/unpaid etc.)
-GRACE_DAYS = 7
 
-
-def decode_token(token: str):
+# -------------------------------------------------------------------
+# TOKEN DECODE
+# - single responsibility
+# - no UX messaging
+# -------------------------------------------------------------------
+def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-# =========================
-# 🏢 Business auth (HARD LOCK + GRACE)
-# =========================
+# -------------------------------------------------------------------
+# STRICT BUSINESS AUTH
+# - verified
+# - active
+# - NOT admin
+# -------------------------------------------------------------------
 def get_current_business(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> Business:
-    token = creds.credentials
-    payload = decode_token(token)
+    payload = decode_token(creds.credentials)
 
-    # 🚫 Admin tokens not allowed
     if payload.get("type") == "admin":
-        raise HTTPException(status_code=403, detail="Admin token not allowed")
+        raise HTTPException(status_code=403, detail="Forbidden")
 
     business_id = payload.get("sub")
     if not business_id:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    business = db.query(Business).get(int(business_id))
+    business = db.get(Business, int(business_id))
     if not business:
-        raise HTTPException(status_code=401, detail="Business not found")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
-    # 🚫 SUSPENSION LOCK (allow grace period)
+    if not business.email_verified:
+        raise HTTPException(status_code=403, detail="Email not verified")
+
     if not business.is_active:
-        # If we have a known billing period end, allow a short grace window
-        if business.stripe_current_period_end:
-            now = datetime.now(timezone.utc)
-            grace_until = business.stripe_current_period_end + timedelta(days=GRACE_DAYS)
-            if now <= grace_until:
-                return business
-
-        raise HTTPException(
-            status_code=403,
-            detail="Business account is suspended",
-        )
+        raise HTTPException(status_code=403, detail="Account inactive")
 
     return business
 
 
-# =========================
-# 🔒 Admin auth (unchanged)
-# =========================
+# -------------------------------------------------------------------
+# ONBOARDING BUSINESS AUTH
+# - verified
+# - NOT active yet
+# - used ONLY for checkout / onboarding
+# -------------------------------------------------------------------
+def get_current_business_onboarding(
+    creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> Business:
+    payload = decode_token(creds.credentials)
+
+    if payload.get("type") == "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    business_id = payload.get("sub")
+    if not business_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    business = db.get(Business, int(business_id))
+    if not business:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if not business.email_verified:
+        raise HTTPException(status_code=403, detail="Email not verified")
+
+    return business
+
+
+# -------------------------------------------------------------------
+# ADMIN AUTH
+# - admin token only
+# -------------------------------------------------------------------
 def get_current_admin(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> Admin:
-    token = creds.credentials
-    payload = decode_token(token)
+    payload = decode_token(creds.credentials)
 
     if payload.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -78,49 +102,44 @@ def get_current_admin(
     if not admin_id:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    admin = db.query(Admin).get(int(admin_id))
+    admin = db.get(Admin, int(admin_id))
     if not admin:
-        raise HTTPException(status_code=401, detail="Admin not found")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
     return admin
 
 
-# =========================
-# 🧱 Tier feature enforcement
-# =========================
+# -------------------------------------------------------------------
+# FEATURE / TIER ENFORCEMENT
+# - depends on STRICT business auth
+# - minimal error surface
+# -------------------------------------------------------------------
 def require_feature(feature: str):
     def _check(business: Business = Depends(get_current_business)):
 
-        # 🔵 FEATURE TIER CHECK
-        allowed = TIERS.get(business.tier, {}).get(feature, False)
-        if not allowed:
-            raise HTTPException(
-                status_code=403,
-                detail="Upgrade required",
-            )
+        # -------------------------
+        # FEATURE AVAILABILITY
+        # -------------------------
+        if not TIERS.get(business.tier, {}).get(feature):
+            raise HTTPException(status_code=403, detail="Upgrade required")
 
-        # 🟣 PAID TIER BILLING CHECK
+        # -------------------------
+        # BILLING ENFORCEMENT
+        # (non-foundation only)
+        # -------------------------
         if business.tier != "foundation":
             if business.stripe_subscription_status not in ("active", "trialing"):
-                raise HTTPException(
-                    status_code=402,
-                    detail="Subscription payment required",
-                )
+                raise HTTPException(status_code=402, detail="Payment required")
 
-            if business.stripe_current_period_end:
-                now = datetime.now(timezone.utc)
-
-                period_end = business.stripe_current_period_end
+            period_end = business.stripe_current_period_end
+            if period_end:
                 if period_end.tzinfo is None:
                     period_end = period_end.replace(tzinfo=timezone.utc)
 
-                    if now > period_end:
-                        raise HTTPException(
-                        status_code=402,
-                        detail="Subscription expired",
-                    )
-
+                if datetime.now(timezone.utc) > period_end:
+                    raise HTTPException(status_code=402, detail="Subscription expired")
 
         return business
 
     return _check
+
