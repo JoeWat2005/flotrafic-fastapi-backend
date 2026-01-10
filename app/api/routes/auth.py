@@ -15,8 +15,11 @@ from app.services.email import (
     send_verification_email,
     send_password_reset_email,
 )
+from app.core.utils import slugify
 from app.api.deps import get_current_business_onboarding
 from app.core.config import settings
+
+RESERVED_SLUGS = {"api", "www", "admin", "dashboard"}
 
 
 # -------------------------------------------------------------------
@@ -118,14 +121,29 @@ def pre_register(payload: PreRegisterRequest, db: Session = Depends(get_db)):
     # NEW ACCOUNT
     # ---------------------------------------------------------------
     # Business name must be unique
-    if db.query(Business).filter(Business.name == name).first():
+    slug = slugify(name)
+
+    if not slug:
         raise HTTPException(
             status_code=400,
-            detail="An account with this business name already exists",
+            detail="Business name must contain letters or numbers"
+        )
+    
+    if slug in RESERVED_SLUGS:
+        raise HTTPException(
+            status_code=400,
+            details="This business name is reserved"
+        )
+    
+    if db.query(Business).filter(Business.slug == slug).first():
+        raise HTTPException(
+            status_code=400,
+            detail="A business with a similar name already exists",
         )
 
     business = Business(
         name=name,
+        slug=slug,
         email=email,
         tier=payload.tier,
         hashed_password=hash_password(payload.password),

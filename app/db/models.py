@@ -30,6 +30,8 @@ class Business(Base):
     password_reset_code = Column(String, nullable=True)
     password_reset_expires = Column(DateTime(timezone=True), nullable=True)
 
+    # slug
+    slug = Column(String, unique=True, index=True, nullable=False)
 
 
 class Enquiry(Base):

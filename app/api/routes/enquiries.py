@@ -16,26 +16,6 @@ router = APIRouter(
 )
 
 
-@router.post("/", response_model=dict)
-def create_enquiry(
-    payload: EnquiryCreate,
-    db: Session = Depends(get_db),
-    current_business: Business = Depends(get_current_business),
-):
-    enquiry = Enquiry(
-        name=payload.name,
-        email=payload.email,
-        message=payload.message,
-        business_id=current_business.id,
-    )
-
-    db.add(enquiry)
-    db.commit()
-
-
-    return {"success": True, "stored": True}
-
-
 @router.get("/", response_model=List[EnquiryOut])
 def get_enquiries(
     is_read: Optional[bool] = None,
