@@ -92,7 +92,26 @@ def get_bookings(
     )
 
 
+@router.get("/next", response_model=BookingOut | None)
+def get_next_booking(
+    db: Session = Depends(get_db),
+    current_business: Business = Depends(require_feature("bookings")),
+):
+    from datetime import datetime
+    now = datetime.now()
+    
+    return (
+        db.query(Booking)
+        .filter(
+            Booking.business_id == current_business.id,
+            Booking.start_time >= now
+        )
+        .order_by(Booking.start_time.asc())
+        .first()
+    )
+
 @router.delete("/{booking_id}", response_model=dict)
+
 def delete_booking(
     booking_id: int,
     db: Session = Depends(get_db),

@@ -1,6 +1,5 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 import os
 
 DATABASE_URL = os.getenv(
@@ -12,7 +11,6 @@ DATABASE_URL = os.getenv(
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
 )
 
 SessionLocal = sessionmaker(
@@ -27,3 +25,4 @@ def get_db():
         yield db
     finally:
         db.close()
+

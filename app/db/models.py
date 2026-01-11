@@ -66,6 +66,13 @@ class Business(Base):
         cascade="all, delete-orphan",
     )
 
+    customisation = relationship(
+        "BusinessCustomisation",
+        uselist=False,
+        back_populates="business",
+        cascade="all, delete-orphan",
+    )
+
 
 # =========================================================
 # ENQUIRIES
@@ -197,6 +204,21 @@ class AuditLog(Base):
     details = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
+class Visit(Base):
+    __tablename__ = "visits"
+
+    id = Column(Integer, primary_key=True)
+    business_id = Column(
+        Integer,
+        ForeignKey("businesses.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    path = Column(String, nullable=False, default="/")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
 class BusinessCustomisation(Base):
     __tablename__ = "business_customisations"
 
@@ -213,9 +235,9 @@ class BusinessCustomisation(Base):
     # =========================
     # Branding
     # =========================
-    primary_color = Column(String, default="#0f172a")      # slate-900
-    secondary_color = Column(String, default="#334155")    # slate-700
-    accent_color = Column(String, default="#38bdf8")       # sky-400
+    primary_color = Column(String, default="#000000")      # Black
+    secondary_color = Column(String, default="#ffffff")    # White
+    accent_color = Column(String, default="#2563eb")       # Blue-600
 
     logo_url = Column(String, nullable=True)
     favicon_url = Column(String, nullable=True)
@@ -241,7 +263,38 @@ class BusinessCustomisation(Base):
     # =========================
     custom_css = Column(String, nullable=True)
 
-    # Flexible future config
-    extra = Column(JSON, nullable=True)
+    # =========================
+    # Style
+    # =========================
+    border_radius = Column(String, default="medium")
+    text_alignment = Column(String, default="center")
+    button_style = Column(String, default="solid")
+    
+    # =========================
+    # New Content Properties
+    # =========================
+    about_title = Column(String, nullable=True)
+    about_content = Column(String, nullable=True)
 
-    business = relationship("Business", backref="customisation")
+    # Contact Info
+    contact_email = Column(String, nullable=True)
+    contact_phone = Column(String, nullable=True)
+    contact_address = Column(String, nullable=True)
+
+    # Socials
+    social_facebook = Column(String, nullable=True)
+    social_twitter = Column(String, nullable=True)
+    social_instagram = Column(String, nullable=True)
+    social_linkedin = Column(String, nullable=True)
+
+    # Lists (Testimonials & Pricing)
+    testimonials = Column(JSON, default=list)
+    pricing_plans = Column(JSON, default=list)
+    
+    # Layout Order
+    section_order = Column(JSON, default=lambda: ["hero", "about", "testimonials", "pricing", "contact"])
+    
+    # Animations
+    animation_enabled = Column(Boolean, default=True)
+
+    business = relationship("Business", back_populates="customisation")

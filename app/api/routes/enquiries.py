@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.db.session import get_db
-from app.db.models import Enquiry, Business
+from app.db.models import Enquiry, Business, Visit
+
 from app.schemas.enquiry import EnquiryCreate, EnquiryOut
 from app.api.deps import get_current_business, require_feature
 
@@ -146,7 +147,12 @@ def enquiry_stats(
                 Enquiry.status == "new",
             )
             .count(),
+            
+        "visits": db.query(Visit)
+            .filter(Visit.business_id == business.id)
+            .count()
     }
+
 
 @router.patch("/bulk-read")
 def mark_all_read(
