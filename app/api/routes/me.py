@@ -28,6 +28,7 @@ def get_me(
         "email": business.email,
         "tier": business.tier,
         "is_active": business.is_active,
+        "slug": business.slug,
     }
 
 

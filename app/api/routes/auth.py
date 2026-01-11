@@ -247,8 +247,8 @@ def start_checkout(
             "business_id": str(business.id),
             "tier": business.tier,
         },
-        success_url=f"{settings.FRONTEND_URL}/dashboard",
-        cancel_url=f"{settings.FRONTEND_URL}/dashboard",
+        success_url = f"{settings.FRONTEND_URL}/{business.slug}/dashboard",
+        cancel_url  = f"{settings.FRONTEND_URL}/{business.slug}/dashboard",
     )
 
     return {"checkout_url": session.url}
