@@ -40,7 +40,6 @@ def send_verification_email(*, to: str, code: str) -> None:
                 "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
             },
         )
-        print("email was called")
 
         brevo.send_transac_email(email)
 
@@ -58,7 +57,6 @@ def send_password_reset_email(*, to: str, code: str) -> None:
                 "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
             },
         )
-        print("email was called")
         
         brevo.send_transac_email(email)
 

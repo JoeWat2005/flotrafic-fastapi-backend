@@ -39,3 +39,37 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+RESERVED_SLUGS = {
+    # Core infrastructure
+    "www",
+    "api",
+    "admin",
+    "static",
+    "assets",
+    "cdn",
+    "files",
+
+    # Backend route prefixes
+    "auth",
+    "billing",
+    "bookings",
+    "business",
+    "enquiries",
+    "me",
+    "public",
+    "stripe",
+
+    # Frontend / platform routes
+    "dashboard",
+    "login",
+    "signup",
+    "settings",
+    "account",
+    "pricing",
+    "docs",
+    "help",
+    "support",
+    "status",
+}
+

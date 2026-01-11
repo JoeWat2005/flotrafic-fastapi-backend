@@ -14,18 +14,18 @@ from app.db.seed import seed_admin
 app = FastAPI(title="Flotrafic API")
 
 
-# ✅ CORS (DEV + PROD)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://site.flotrafic.local:5173",  # ← THIS WAS MISSING
         "https://flotrafic.co.uk",
         "https://www.flotrafic.co.uk",
     ],
-    allow_credentials=True,   # ← IMPORTANT
-    allow_methods=["*"],      # ← REQUIRED
-    allow_headers=["*"],      # ← REQUIRED
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

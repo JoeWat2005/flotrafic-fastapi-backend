@@ -9,6 +9,7 @@ from app.api.routes import (
     me,
     billing,
     stripe_webhook,
+    public,
 )
 
 api_router = APIRouter()
@@ -17,6 +18,7 @@ api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(enquiries.router)
 api_router.include_router(bookings.router)
+api_router.include_router(public.router)
 
 # 👤 Business self-service
 api_router.include_router(me.router)
