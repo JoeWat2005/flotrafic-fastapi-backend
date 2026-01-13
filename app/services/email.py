@@ -41,15 +41,15 @@ def _send_email(*, to: str, template_id: int, params: dict[str, Any]) -> None:
         ) from e
 
 
-# -------------------------------------------------------------------
-# Auth emails
-# -------------------------------------------------------------------
+# =========================================================
+# AUTH EMAILS
+# =========================================================
 def send_verification_email(*, user_email: str, code: str) -> None:
     _send_email(
         to=user_email,
-        template_id=5,
+        template_id=15,  # verify email
         params={
-            "VERIFICATION_CODE": code,
+            "CODE": code,
             "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
         },
     )
@@ -58,30 +58,28 @@ def send_verification_email(*, user_email: str, code: str) -> None:
 def send_password_reset_email(*, user_email: str, code: str) -> None:
     _send_email(
         to=user_email,
-        template_id=6,
+        template_id=16,  # reset password
         params={
-            "RESET_CODE": code,
+            "CODE": code,
             "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
         },
     )
 
 
-# -------------------------------------------------------------------
-# Enquiries
-# -------------------------------------------------------------------
+# =========================================================
+# ENQUIRIES
+# =========================================================
 def send_enquiry_notification(
     *,
     business_email: str,
-    business_name: str,
     customer_name: str,
     customer_email: str,
     message: str,
 ) -> None:
     _send_email(
         to=business_email,
-        template_id=7,
+        template_id=14,  # enquiry received (business)
         params={
-            "BUSINESS_NAME": business_name,
             "CUSTOMER_NAME": customer_name,
             "CUSTOMER_EMAIL": customer_email,
             "MESSAGE": message,
@@ -89,23 +87,50 @@ def send_enquiry_notification(
     )
 
 
-# -------------------------------------------------------------------
-# Bookings
-# -------------------------------------------------------------------
-def send_booking_notification(
+# =========================================================
+# BOOKINGS — STATE AWARE
+# =========================================================
+def _format_booking_time(start_time: datetime) -> tuple[str, str]:
+    return (
+        start_time.strftime("%A, %d %B %Y"),
+        start_time.strftime("%H:%M"),
+    )
+
+
+# ---------------------------------------------------------
+# Booking created → PENDING
+# ---------------------------------------------------------
+def send_booking_pending_customer(
+    *,
+    customer_email: str,
+    business_name: str,
+    start_time: datetime,
+) -> None:
+    formatted_date, formatted_time = _format_booking_time(start_time)
+
+    _send_email(
+        to=customer_email,
+        template_id=10,  # booking pending (customer)
+        params={
+            "BUSINESS_NAME": business_name,
+            "FORMATTED_DATE": formatted_date,
+            "FORMATTED_TIME": formatted_time,
+        },
+    )
+
+
+def send_booking_pending_business(
     *,
     business_email: str,
     business_name: str,
     customer_email: str | None,
     start_time: datetime,
 ) -> None:
-    formatted_date = start_time.strftime("%A, %d %B %Y")
-    formatted_time = start_time.strftime("%H:%M")
+    formatted_date, formatted_time = _format_booking_time(start_time)
 
-    # Business notification (CRITICAL)
     _send_email(
         to=business_email,
-        template_id=8,
+        template_id=11,  # booking pending (business)
         params={
             "BUSINESS_NAME": business_name,
             "FORMATTED_DATE": formatted_date,
@@ -114,26 +139,56 @@ def send_booking_notification(
         },
     )
 
-    # Customer confirmation (NON-CRITICAL)
-    if customer_email:
-        try:
-            _send_email(
-                to=customer_email,
-                template_id=9,
-                params={
-                    "BUSINESS_NAME": business_name,
-                    "FORMATTED_DATE": formatted_date,
-                    "FORMATTED_TIME": formatted_time,
-                    "BUSINESS_EMAIL": business_email,
-                },
-            )
-        except RuntimeError:
-            pass
+
+# ---------------------------------------------------------
+# Booking confirmed
+# ---------------------------------------------------------
+def send_booking_confirmed_customer(
+    *,
+    customer_email: str,
+    business_name: str,
+    business_email: str,
+    start_time: datetime,
+) -> None:
+    formatted_date, formatted_time = _format_booking_time(start_time)
+
+    _send_email(
+        to=customer_email,
+        template_id=12,  # booking confirmed (customer)
+        params={
+            "BUSINESS_NAME": business_name,
+            "FORMATTED_DATE": formatted_date,
+            "FORMATTED_TIME": formatted_time,
+            "BUSINESS_EMAIL": business_email,
+        },
+    )
 
 
-# -------------------------------------------------------------------
-# Subscription lifecycle (PRODUCT state, not billing)
-# -------------------------------------------------------------------
+# ---------------------------------------------------------
+# Booking cancelled
+# ---------------------------------------------------------
+def send_booking_cancelled_customer(
+    *,
+    customer_email: str,
+    business_name: str,
+    start_time: datetime,
+) -> None:
+    formatted_date, formatted_time = _format_booking_time(start_time)
+
+    _send_email(
+        to=customer_email,
+        template_id=13,  # booking cancelled (customer)
+        params={
+            "BUSINESS_NAME": business_name,
+            "FORMATTED_DATE": formatted_date,
+            "FORMATTED_TIME": formatted_time,
+        },
+    )
+
+
+# =========================================================
+# SUBSCRIPTION / BILLING
+# =========================================================
 def send_subscription_activated_email(
     *,
     business_email: str,
@@ -141,9 +196,26 @@ def send_subscription_activated_email(
 ) -> None:
     _send_email(
         to=business_email,
-        template_id=10,
+        template_id=17,  # subscription activated
         params={
             "TIER": tier.capitalize(),
+            "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
+        },
+    )
+
+
+def send_subscription_plan_changed_email(
+    *,
+    business_email: str,
+    old_tier: str,
+    new_tier: str,
+) -> None:
+    _send_email(
+        to=business_email,
+        template_id=18,  # subscription plan changed
+        params={
+            "OLD_TIER": old_tier.capitalize(),
+            "NEW_TIER": new_tier.capitalize(),
             "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
         },
     )
@@ -155,7 +227,7 @@ def send_subscription_cancelled_email(
 ) -> None:
     _send_email(
         to=business_email,
-        template_id=11,
+        template_id=19,  # subscription cancelled
         params={
             "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
         },
@@ -168,24 +240,27 @@ def send_account_paused_email(
 ) -> None:
     _send_email(
         to=business_email,
-        template_id=12,
+        template_id=20,  # account paused
         params={
             "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
         },
     )
 
-def send_subscription_plan_changed_email(
+
+def send_payment_issue_email(
     *,
     business_email: str,
-    old_tier: str,
-    new_tier: str,
+    status: str,
+    grace_days: int,
 ) -> None:
     _send_email(
         to=business_email,
-        template_id=13,  # Subscription plan changed
+        template_id=21,  # payment issue
         params={
-            "OLD_TIER": old_tier.capitalize(),
-            "NEW_TIER": new_tier.capitalize(),
+            "STATUS": status,
+            "GRACE_DAYS": grace_days,
             "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
         },
     )
+
+

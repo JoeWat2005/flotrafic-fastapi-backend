@@ -166,7 +166,7 @@ class Booking(Base):
     start_time = Column(DateTime(timezone=True), nullable=False)
     end_time = Column(DateTime(timezone=True), nullable=False)
 
-    status = Column(BookingStatusEnum, nullable=False, default="confirmed")
+    status = Column(BookingStatusEnum, nullable=False, default="pending")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
