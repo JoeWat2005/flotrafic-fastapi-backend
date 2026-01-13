@@ -6,6 +6,7 @@ from app.db.session import get_db
 from app.db.models import Booking, Enquiry, Business
 from app.schemas.booking import BookingCreate, BookingOut
 from app.api.deps import require_feature
+from app.services.email import send_booking_notification
 
 
 # 🔒 Bookings require the "bookings" feature
@@ -74,7 +75,16 @@ def create_booking(
     db.commit()
     db.refresh(booking)
 
-    # 📧 Email BUSINESS
+    # 📧 Email Notifications
+    client_email = enquiry.email if enquiry else None
+    
+    send_booking_notification(
+        business_email=current_business.email,
+        business_name=current_business.name,
+        customer_email=client_email,
+        start_time=payload.start_time,
+    )
+
 
     return {"success": True}
 

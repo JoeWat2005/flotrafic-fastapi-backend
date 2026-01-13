@@ -26,26 +26,25 @@ def create_checkout(
     - Optional one-time setup fee (first checkout only)
     """
 
-    line_items = [
-        # ✅ Platform fee (ALWAYS REQUIRED)
-        {"price": stripe_config.PLATFORM_PRICE_ID, "quantity": 1},
-    ]
+    line_items = []
 
-    # Optional tier upgrade
-    if tier:
-        if tier not in ("managed", "autopilot"):
-            raise HTTPException(status_code=400, detail="Invalid tier")
+    # Determine Price ID based on tier (Single Price ID Model)
+    selected_tier = tier if tier else "foundation"
+    
+    if selected_tier == "foundation":
+        price_id = stripe_config.FOUNDATION_PRICE_ID
+    elif selected_tier == "managed":
+        price_id = stripe_config.MANAGED_PRICE_ID
+    elif selected_tier == "autopilot":
+        price_id = stripe_config.AUTOPILOT_PRICE_ID
+    else:
+        raise HTTPException(status_code=400, detail="Invalid tier")
 
-        tier_price = (
-            stripe_config.MANAGED_PRICE_ID
-            if tier == "managed"
-            else stripe_config.AUTOPILOT_PRICE_ID
-        )
-
-        line_items.append({"price": tier_price, "quantity": 1})
+    # Add the main subscription item
+    line_items.append({"price": price_id, "quantity": 1})
 
     # One-time setup fee (only if never paid before)
-    if not business.stripe_subscription_id:
+    if not business.stripe_subscription_id and stripe_config.SETUP_PRICE_ID:
         line_items.append(
             {"price": stripe_config.SETUP_PRICE_ID, "quantity": 1}
         )

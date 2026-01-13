@@ -5,6 +5,7 @@ from app.db.models import Business, Enquiry, BusinessCustomisation, Visit
 from app.db.session import get_db
 from app.core.config import RESERVED_SLUGS
 from app.schemas.enquiry import EnquiryCreate
+from app.services.email import send_enquiry_notification
 
 router = APIRouter(
     prefix="/public",
@@ -156,6 +157,16 @@ def create_public_enquiry(
     db.add(enquiry)
     db.commit()
     db.refresh(enquiry)
+
+    # 4. Send Email Notification
+    send_enquiry_notification(
+        business_email=business.email,
+        business_name=business.name,
+        customer_name=payload.name,
+        customer_email=payload.email,
+        message=payload.message,
+    )
+
 
     return {"success": True, "message": "Enquiry sent successfully"}
 

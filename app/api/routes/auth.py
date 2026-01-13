@@ -114,7 +114,11 @@ def pre_register(payload: PreRegisterRequest, db: Session = Depends(get_db)):
 
         db.commit()
 
-        send_verification_email(to=existing.email, code=code)
+        send_verification_email(
+            user_email=existing.email, 
+            code=code
+        )
+
         return {"status": "code_resent"}
 
     # ---------------------------------------------------------------
@@ -156,7 +160,10 @@ def pre_register(payload: PreRegisterRequest, db: Session = Depends(get_db)):
     db.add(business)
     db.commit()
 
-    send_verification_email(to=business.email, code=code)
+    send_verification_email(
+        user_email=business.email, 
+        code=code
+    )
 
     return {"status": "code_sent"}
 
@@ -283,7 +290,10 @@ def resend_verification(payload: dict, db: Session = Depends(get_db)):
 
     db.commit()
 
-    send_verification_email(to=business.email, code=code)
+    send_verification_email(
+        user_email=business.email, 
+        code=code
+    )
 
     return {"status": "ok"}
 
@@ -315,9 +325,10 @@ def request_password_reset(payload: dict, db: Session = Depends(get_db)):
     db.commit()
 
     send_password_reset_email(
-        to=business.email,
+        user_email=business.email,
         code=code,
     )
+
 
     return {"status": "ok"}
 
