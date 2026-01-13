@@ -6,6 +6,7 @@ from app.db.session import get_db
 from app.db.models import Business
 from app.core.security import verify_password, hash_password
 from app.schemas.me import UpdateMe, ChangePassword
+from app.services.audit import log_action
 
 router = APIRouter(
     prefix="/me",
@@ -65,6 +66,13 @@ def update_me(
     business.name = payload.name.strip()
     db.commit()
 
+    log_action(
+        db=db,
+        actor_type="business",
+        actor_id=business.id,
+        action="account.name_updated",
+    )
+
     return {
         "id": business.id,
         "name": business.name,
@@ -94,5 +102,12 @@ def change_password(
 
     business.hashed_password = hash_password(payload.new_password)
     db.commit()
+
+    log_action(
+        db=db,
+        actor_type="business",
+        actor_id=business.id,
+        action="account.password_changed",
+    )
 
     return {"status": "ok"}

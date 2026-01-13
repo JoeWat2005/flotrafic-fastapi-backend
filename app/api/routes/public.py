@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 
-from app.db.models import Business, Enquiry, BusinessCustomisation, Visit, Booking
+from app.db.models import Business, Enquiry, Visit, Booking
 from app.db.session import get_db
 from app.core.config import RESERVED_SLUGS
 from app.schemas.enquiry import EnquiryCreate
 from app.services.email import send_enquiry_notification, send_booking_pending_business, send_booking_pending_customer
 from app.schemas.booking import PublicBookingCreate
+from app.services.audit import log_action
+
 router = APIRouter(
     prefix="/public",
     tags=["Public"],  # ✅ MUST be a list
@@ -157,6 +159,14 @@ def create_public_enquiry(
     db.commit()
     db.refresh(enquiry)
 
+    log_action(
+        db=db,
+        actor_type="system",
+        actor_id=business.id,
+        action="public.enquiry_created",
+        details=f"enquiry_id={enquiry.id}",
+    )
+
     # 4. Send Email Notification
     send_enquiry_notification(
         business_email=business.email,
@@ -231,6 +241,14 @@ def create_public_booking(
     db.add(booking)
     db.commit()
     db.refresh(booking)
+
+    log_action(
+        db=db,
+        actor_type="system",
+        actor_id=business.id,
+        action="public.booking_requested",
+        details=f"booking_id={booking.id}",
+    )
 
     # Emails
     send_booking_pending_business(

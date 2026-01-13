@@ -95,6 +95,15 @@ async def stripe_webhook(request: Request):
                     )
 
                 db.commit()
+
+                log_action(
+                    db=db,
+                    actor_type="system",
+                    actor_id=business.id,
+                    action="billing.subscription_created",
+                    details=f"tier={metadata.get('tier')}",
+                )
+
                 handled = True
 
         # =========================
@@ -160,6 +169,14 @@ async def stripe_webhook(request: Request):
 
                 db.commit()
 
+                log_action(
+                    db=db,
+                    actor_type="system",
+                    actor_id=business.id,
+                    action="billing.tier_changed",
+                    details=f"{old_tier}->{new_tier}",
+                )
+
                 # ✅ Only email if tier actually changed
                 if old_tier and old_tier != new_tier:
                     send_subscription_plan_changed_email(
@@ -188,6 +205,13 @@ async def stripe_webhook(request: Request):
                 business.is_active = False
                 business.stripe_subscription_status = "canceled"
                 db.commit()
+
+                log_action(
+                    db=db,
+                    actor_type="system",
+                    actor_id=business.id,
+                    action="billing.subscription_cancelled",
+                )
 
                 send_subscription_cancelled_email(
                     business_email=business.email
@@ -221,6 +245,13 @@ async def stripe_webhook(request: Request):
                 business.is_active = False
                 business.stripe_subscription_status = "past_due"
                 db.commit()
+
+                log_action(
+                    db=db,
+                    actor_type="system",
+                    actor_id=business.id,
+                    action="billing.payment_failed",
+                )
 
                 send_account_paused_email(
                     business_email=business.email

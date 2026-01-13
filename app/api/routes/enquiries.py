@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from app.db.session import get_db
 from app.db.models import Enquiry, Business, Visit
-
-from app.schemas.enquiry import EnquiryCreate, EnquiryOut
+from app.schemas.enquiry import EnquiryOut
 from app.api.deps import get_current_business, require_feature
+from app.services.audit import log_action
 
 
 # 🔒 Enquiries: create = ALL TIERS, manage = enquiries_manage
@@ -19,14 +19,11 @@ router = APIRouter(
 
 @router.get("/", response_model=List[EnquiryOut])
 def get_enquiries(
-    is_read: Optional[bool] = None,
-    status: Optional[str] = None,
-    sort: str = Query(
-        "newest",
-        pattern="^(newest|oldest|unread|status)$"
-    ),
+    is_read: Optional[bool] = Query(None),
+    status: Optional[Literal["new", "in_progress", "resolved"]] = Query(None),
+    sort: Literal["newest", "oldest", "unread", "status"] = Query("newest"),
     limit: int = Query(20, le=100),
-    offset: int = 0,
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_business: Business = Depends(require_feature("enquiries_manage")),
 ):
@@ -38,10 +35,9 @@ def get_enquiries(
     if is_read is not None:
         query = query.filter(Enquiry.is_read == is_read)
 
-    if status:
+    if status is not None:
         query = query.filter(Enquiry.status == status)
 
-    # 🔽 SORTING
     if sort == "oldest":
         query = query.order_by(Enquiry.created_at.asc())
     elif sort == "unread":
@@ -82,6 +78,14 @@ def mark_enquiry_read(
     enquiry.is_read = True
     db.commit()
 
+    log_action(
+        db=db,
+        actor_type="business",
+        actor_id=current_business.id,
+        action="enquiry.marked_read",
+        details=f"enquiry_id={enquiry.id}",
+    )
+
     return {"success": True}
 
 
@@ -106,6 +110,14 @@ def update_enquiry_status(
 
     enquiry.status = status
     db.commit()
+
+    log_action(
+        db=db,
+        actor_type="business",
+        actor_id=current_business.id,
+        action="enquiry.status_changed",
+        details=f"enquiry_id={enquiry.id},status={status}",
+    )
 
     return {"success": True}
 
@@ -136,6 +148,14 @@ def delete_enquiry(
 
     db.delete(enquiry)
     db.commit()
+
+    log_action(
+        db=db,
+        actor_type="business",
+        actor_id=current_business.id,
+        action="enquiry.deleted",
+        details=f"enquiry_id={enquiry_id}",
+    )
 
     return {"success": True}
 

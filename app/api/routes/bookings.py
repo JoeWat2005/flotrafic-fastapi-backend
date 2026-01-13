@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, Query
+from sqlalchemy.orm import Session
+from fastapi import Query
 from typing import List, Optional
 from datetime import datetime, timezone
+from typing import Optional, Literal
 
 from app.db.session import get_db
 from app.db.models import Booking, Enquiry, Business
@@ -11,6 +13,7 @@ from app.services.email import (
     send_booking_confirmed_customer,
     send_booking_cancelled_customer,
 )
+from app.services.audit import log_action
 
 router = APIRouter(
     prefix="/bookings",
@@ -21,16 +24,10 @@ router = APIRouter(
 
 @router.get("/", response_model=List[BookingOut])
 def get_bookings(
-    status: Optional[str] = Query(
-        None,
-        pattern="^(pending|confirmed|cancelled)$"
-    ),
-    sort: str = Query(
-        "upcoming",
-        pattern="^(upcoming|past|created)$"
-    ),
+    status: Optional[Literal["pending", "confirmed", "cancelled"]] = Query(None),
+    sort: Literal["upcoming", "past", "created"] = Query("upcoming"),
     limit: int = Query(20, le=100),
-    offset: int = 0,
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_business: Business = Depends(require_feature("bookings")),
 ):
@@ -41,10 +38,9 @@ def get_bookings(
         .filter(Booking.business_id == current_business.id)
     )
 
-    if status:
+    if status is not None:
         query = query.filter(Booking.status == status)
 
-    # 🔽 SORTING
     if sort == "past":
         query = (
             query
@@ -86,6 +82,14 @@ def confirm_booking(
     db.commit()
     db.refresh(booking)
 
+    log_action(
+        db=db,
+        actor_type="business",
+        actor_id=current_business.id,
+        action="booking.confirmed",
+        details=f"booking_id={booking.id}",
+    )
+
     if booking.enquiry_id:
         enquiry = db.query(Enquiry).filter(Enquiry.id == booking.enquiry_id).first()
         if enquiry:
@@ -119,6 +123,14 @@ def cancel_booking(
 
     booking.status = "cancelled"
     db.commit()
+
+    log_action(
+        db=db,
+        actor_type="business",
+        actor_id=current_business.id,
+        action="booking.cancelled",
+        details=f"booking_id={booking.id}",
+    )
 
     if booking.enquiry_id:
         enquiry = db.query(Enquiry).filter(Enquiry.id == booking.enquiry_id).first()
@@ -180,6 +192,14 @@ def create_booking_from_enquiry(
 
     db.commit()
     db.refresh(booking)
+
+    log_action(
+        db=db,
+        actor_type="business",
+        actor_id=current_business.id,
+        action="booking.created_from_enquiry",
+        details=f"booking_id={booking.id},enquiry_id={enquiry.id}",
+    )
 
     # 5. Notify customer (confirmed booking)
     send_booking_confirmed_customer(

@@ -18,6 +18,7 @@ from app.services.email import (
 from app.core.utils import slugify
 from app.api.deps import get_current_business_onboarding
 from app.core.config import settings
+from app.services.audit import log_action
 
 RESERVED_SLUGS = {"api", "www", "admin", "dashboard"}
 
@@ -54,6 +55,15 @@ def login(payload: dict, db: Session = Depends(get_db)):
 
     # Generic error prevents user enumeration
     if not business or not verify_password(password, business.hashed_password):
+
+        log_action(
+            db=db,
+            actor_type="business",
+            actor_id=0,
+            action="auth.login_failed",
+            details=f"email={email}",
+        )
+
         raise HTTPException(status_code=400, detail="Invalid email or password")
 
     # Email verification is a hard boundary
@@ -65,6 +75,13 @@ def login(payload: dict, db: Session = Depends(get_db)):
         business.password_reset_code = None
         business.password_reset_expires = None
         db.commit()
+
+        log_action(
+            db=db,
+            actor_type="business",
+            actor_id=business.id,
+            action="auth.login",
+        )
 
     token = create_access_token({"sub": str(business.id)})
 
@@ -212,6 +229,13 @@ def verify_email_code(payload: dict, db: Session = Depends(get_db)):
     business.email_verification_expires = None
 
     db.commit()
+
+    log_action(
+        db=db,
+        actor_type="business",
+        actor_id=business.id,
+        action="auth.email_verified",
+    )
 
     return {"status": "verified"}
 
@@ -372,6 +396,13 @@ def reset_password(payload: dict, db: Session = Depends(get_db)):
     business.password_reset_expires = None
 
     db.commit()
+
+    log_action(
+        db=db,
+        actor_type="business",
+        actor_id=business.id,
+        action="auth.password_reset",
+    )
 
     return {"status": "ok"}
 

@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from typing import Optional
 
 from app.db.session import get_db
 from app.db.models import Business, BusinessCustomisation
 from app.api.deps import get_current_business
 from app.schemas.customisation import CustomisationOut, CustomisationUpdate
+from app.services.audit import log_action
 
 router = APIRouter(
     prefix="/customisation",
@@ -46,5 +46,13 @@ def update_customisation(
         
     db.commit()
     db.refresh(cust)
+
+    log_action(
+        db=db,
+        actor_type="business",
+        actor_id=business.id,
+        action="customisation.updated",
+        details="fields=" + ",".join(update_data.keys()),
+    )
     
     return cust
