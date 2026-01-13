@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from typing import List
-from datetime import datetime
+from sqlalchemy.orm import Session, Query
+from typing import List, Optional
+from datetime import datetime, timezone
 
 from app.db.session import get_db
 from app.db.models import Booking, Enquiry, Business
@@ -21,15 +21,46 @@ router = APIRouter(
 
 @router.get("/", response_model=List[BookingOut])
 def get_bookings(
+    status: Optional[str] = Query(
+        None,
+        pattern="^(pending|confirmed|cancelled)$"
+    ),
+    sort: str = Query(
+        "upcoming",
+        pattern="^(upcoming|past|created)$"
+    ),
+    limit: int = Query(20, le=100),
+    offset: int = 0,
     db: Session = Depends(get_db),
     current_business: Business = Depends(require_feature("bookings")),
 ):
-    return (
+    now = datetime.now(timezone.utc)
+
+    query = (
         db.query(Booking)
         .filter(Booking.business_id == current_business.id)
-        .order_by(Booking.start_time)
-        .all()
     )
+
+    if status:
+        query = query.filter(Booking.status == status)
+
+    # 🔽 SORTING
+    if sort == "past":
+        query = (
+            query
+            .filter(Booking.end_time < now)
+            .order_by(Booking.start_time.desc())
+        )
+    elif sort == "created":
+        query = query.order_by(Booking.created_at.desc())
+    else:  # upcoming
+        query = (
+            query
+            .filter(Booking.end_time >= now)
+            .order_by(Booking.start_time.asc())
+        )
+
+    return query.offset(offset).limit(limit).all()
 
 
 @router.post("/{booking_id}/confirm")

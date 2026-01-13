@@ -98,6 +98,27 @@ async def stripe_webhook(request: Request):
                 handled = True
 
         # =========================
+        # CURRENT PERIOD END    
+        # =========================
+
+        elif event_type == "invoice.paid":
+            sub_id = obj.get("subscription")
+
+            business = (
+                db.query(Business)
+                .filter(Business.stripe_subscription_id == sub_id)
+                .first()
+                if sub_id
+                else None
+            )
+
+            if business:
+                _safe_stripe_subscription_refresh(business)
+                business.is_active = True
+                db.commit()
+                handled = True
+
+        # =========================
         # SUBSCRIPTION UPDATED
         # =========================
         elif event_type == "customer.subscription.updated":

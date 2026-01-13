@@ -21,6 +21,10 @@ router = APIRouter(
 def get_enquiries(
     is_read: Optional[bool] = None,
     status: Optional[str] = None,
+    sort: str = Query(
+        "newest",
+        pattern="^(newest|oldest|unread|status)$"
+    ),
     limit: int = Query(20, le=100),
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -37,13 +41,24 @@ def get_enquiries(
     if status:
         query = query.filter(Enquiry.status == status)
 
-    return (
-        query
-        .order_by(Enquiry.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    # 🔽 SORTING
+    if sort == "oldest":
+        query = query.order_by(Enquiry.created_at.asc())
+    elif sort == "unread":
+        query = query.order_by(
+            Enquiry.is_read.asc(),
+            Enquiry.created_at.desc(),
+        )
+    elif sort == "status":
+        query = query.order_by(
+            Enquiry.status.asc(),
+            Enquiry.created_at.desc(),
+        )
+    else:  # newest
+        query = query.order_by(Enquiry.created_at.desc())
+
+    return query.offset(offset).limit(limit).all()
+
 
 
 @router.patch("/{enquiry_id}/read", response_model=dict)
