@@ -278,7 +278,7 @@ class BusinessCustomisation(Base):
     secondary_color = Column(String, nullable=False, default="#ffffff")
     accent_color = Column(String, nullable=False, default="#2563eb")
 
-    logo_url = Column(String, nullable=True)
+    logo_path = Column(String, nullable=True)
     favicon_url = Column(String, nullable=True)
     font_family = Column(String, nullable=False, default="Inter")
 

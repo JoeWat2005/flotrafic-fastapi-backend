@@ -19,7 +19,6 @@ class CustomisationBase(BaseModel):
     secondary_color: Optional[str] = "#334155"
     accent_color: Optional[str] = "#38bdf8"
     font_family: Optional[str] = "Inter"
-    logo_url: Optional[str] = None
     
     # Content
     hero_title: Optional[str] = "Professional services you can trust"
@@ -64,7 +63,6 @@ class CustomisationUpdate(BaseModel):
     secondary_color: Optional[str] = None
     accent_color: Optional[str] = None
     font_family: Optional[str] = None
-    logo_url: Optional[str] = None
     
     hero_title: Optional[str] = None
     hero_subtitle: Optional[str] = None
@@ -102,6 +100,8 @@ class CustomisationUpdate(BaseModel):
 class CustomisationOut(CustomisationBase):
     id: int
     business_id: int
+
+    logo_path: Optional[str] = None
 
     model_config = {
         "from_attributes": True

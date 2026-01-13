@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()  # 🔑 LOAD .env FIRST
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db.session import engine, SessionLocal
@@ -12,6 +13,7 @@ from app.db.seed import seed_admin
 
 
 app = FastAPI(title="Flotrafic API")
+app.mount("/media", StaticFiles(directory="uploads"), name="media")
 
 
 app.add_middleware(
