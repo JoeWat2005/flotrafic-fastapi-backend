@@ -15,12 +15,9 @@ class PublicBookingCreate(BaseModel):
 # ----------------------------
 # Used by BUSINESS dashboard
 # ----------------------------
-class BookingCreate(BaseModel):
-    business_id: int
-    enquiry_id: Optional[int] = None
+class BookingFromEnquiryCreate(BaseModel):
     start_time: datetime
     end_time: datetime
-
 
 # ----------------------------
 # Used when returning bookings

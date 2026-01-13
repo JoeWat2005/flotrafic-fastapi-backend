@@ -9,6 +9,7 @@ from sqlalchemy import (
     Index,
     JSON,
     CheckConstraint,
+    UniqueConstraint,
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship, backref
@@ -184,6 +185,10 @@ class Booking(Base):
             "end_time > start_time",
             name="ck_booking_time_valid",
         ),
+        UniqueConstraint(
+            "enquiry_id",
+            name="ud_booking_enquiry",
+        )
     )
 
 

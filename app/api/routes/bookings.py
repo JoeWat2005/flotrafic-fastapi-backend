@@ -5,7 +5,7 @@ from datetime import datetime
 
 from app.db.session import get_db
 from app.db.models import Booking, Enquiry, Business
-from app.schemas.booking import BookingCreate, BookingOut
+from app.schemas.booking import BookingFromEnquiryCreate, BookingOut
 from app.api.deps import require_feature
 from app.services.email import (
     send_booking_confirmed_customer,
@@ -100,6 +100,68 @@ def cancel_booking(
 
     return {"success": True}
 
+@router.post("/from-enquiry/{enquiry_id}")
+def create_booking_from_enquiry(
+    enquiry_id: int,
+    payload: BookingFromEnquiryCreate,
+    db: Session = Depends(get_db),
+    current_business: Business = Depends(require_feature("bookings")),
+):
+    # 1. Fetch enquiry (must belong to this business)
+    enquiry = (
+        db.query(Enquiry)
+        .filter(
+            Enquiry.id == enquiry_id,
+            Enquiry.business_id == current_business.id,
+        )
+        .first()
+    )
+
+    if not enquiry:
+        raise HTTPException(status_code=404, detail="Enquiry not found")
+
+    # 2. Prevent duplicate bookings for one enquiry
+    existing = (
+        db.query(Booking)
+        .filter(Booking.enquiry_id == enquiry.id)
+        .first()
+    )
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="This enquiry already has a booking",
+        )
+
+    # 3. Create CONFIRMED booking (business-picked time)
+    booking = Booking(
+        business_id=current_business.id,
+        enquiry_id=enquiry.id,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+        status="confirmed",
+    )
+
+    db.add(booking)
+
+    # 4. Update enquiry status
+    enquiry.status = "in_progress"
+
+    db.commit()
+    db.refresh(booking)
+
+    # 5. Notify customer (confirmed booking)
+    send_booking_confirmed_customer(
+        customer_email=enquiry.email,
+        business_name=current_business.name,
+        business_email=current_business.email,
+        start_time=booking.start_time,
+    )
+
+    return {
+        "success": True,
+        "booking_id": booking.id,
+    }
 
 
 
