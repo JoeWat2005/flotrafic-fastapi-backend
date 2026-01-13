@@ -8,10 +8,52 @@ from sqlalchemy import (
     Enum,
     Index,
     JSON,
+    CheckConstraint,
 )
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from app.db.base import Base
+
+
+# =========================================================
+# SHARED ENUMS (avoid duplication issues)
+# =========================================================
+TierEnum = Enum(
+    "foundation",
+    "managed",
+    "autopilot",
+    name="tier_enum",
+)
+
+SubscriptionStatusEnum = Enum(
+    "active",
+    "trialing",
+    "past_due",
+    "canceled",
+    "incomplete",
+    name="subscription_status_enum",
+)
+
+EnquiryStatusEnum = Enum(
+    "new",
+    "in_progress",
+    "resolved",
+    name="enquiry_status_enum",
+)
+
+ActorTypeEnum = Enum(
+    "system",
+    "business",
+    "admin",
+    name="actor_type_enum",
+)
+
+BookingStatusEnum = Enum(
+    "pending",
+    "confirmed",
+    "cancelled",
+    name="booking_status_enum",
+)
 
 
 # =========================================================
@@ -26,15 +68,7 @@ class Business(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     slug = Column(String, unique=True, nullable=False, index=True)
 
-    tier = Column(
-        Enum(
-            "foundation",
-            "managed",
-            "autopilot",
-            name="tier_enum",
-        ),
-        nullable=False,
-    )
+    tier = Column(TierEnum, nullable=False, default="foundation")
 
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
@@ -42,7 +76,7 @@ class Business(Base):
     # Stripe
     stripe_customer_id = Column(String, nullable=True, index=True)
     stripe_subscription_id = Column(String, nullable=True, index=True)
-    stripe_subscription_status = Column(String, nullable=True)
+    stripe_subscription_status = Column(SubscriptionStatusEnum, nullable=True)
     stripe_current_period_end = Column(DateTime(timezone=True), nullable=True)
 
     # Email verification
@@ -83,21 +117,12 @@ class Enquiry(Base):
     id = Column(Integer, primary_key=True)
 
     name = Column(String, nullable=False)
-    email = Column(String, nullable=False)
+    email = Column(String, nullable=False, index=True)
     message = Column(String, nullable=False)
 
-    status = Column(
-        Enum(
-            "new",
-            "in_progress",
-            "resolved",
-            name="enquiry_status_enum",
-        ),
-        nullable=False,
-        default="new",
-    )
-
+    status = Column(EnquiryStatusEnum, nullable=False, default="new")
     is_read = Column(Boolean, nullable=False, default=False)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     business_id = Column(
@@ -140,6 +165,9 @@ class Booking(Base):
 
     start_time = Column(DateTime(timezone=True), nullable=False)
     end_time = Column(DateTime(timezone=True), nullable=False)
+
+    status = Column(BookingStatusEnum, nullable=False, default="confirmed")
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     business = relationship("Business", back_populates="bookings")
@@ -152,6 +180,10 @@ class Booking(Base):
             "start_time",
             "end_time",
         ),
+        CheckConstraint(
+            "end_time > start_time",
+            name="ck_booking_time_valid",
+        ),
     )
 
 
@@ -163,7 +195,7 @@ class ContactMessage(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    email = Column(String, nullable=False)
+    email = Column(String, nullable=False, index=True)
     message = Column(String, nullable=False)
     ip_address = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
@@ -189,36 +221,40 @@ class AuditLog(Base):
 
     id = Column(Integer, primary_key=True)
 
-    actor_type = Column(
-        Enum(
-            "system",
-            "business",
-            "admin",
-            name="actor_type_enum",
-        ),
-        nullable=False,
-    )
+    actor_type = Column(ActorTypeEnum, nullable=False)
+    actor_id = Column(Integer, nullable=True, index=True)
 
-    actor_id = Column(Integer, nullable=False, index=True)
     action = Column(String, nullable=False)
     details = Column(String, nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
+
+# =========================================================
+# VISITS
+# =========================================================
 class Visit(Base):
     __tablename__ = "visits"
 
     id = Column(Integer, primary_key=True)
+
     business_id = Column(
         Integer,
         ForeignKey("businesses.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
+
     ip_address = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
     path = Column(String, nullable=False, default="/")
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
+
+# =========================================================
+# BUSINESS CUSTOMISATION
+# =========================================================
 class BusinessCustomisation(Base):
     __tablename__ = "business_customisations"
 
@@ -232,51 +268,39 @@ class BusinessCustomisation(Base):
         index=True,
     )
 
-    # =========================
     # Branding
-    # =========================
-    primary_color = Column(String, default="#000000")      # Black
-    secondary_color = Column(String, default="#ffffff")    # White
-    accent_color = Column(String, default="#2563eb")       # Blue-600
+    primary_color = Column(String, nullable=False, default="#000000")
+    secondary_color = Column(String, nullable=False, default="#ffffff")
+    accent_color = Column(String, nullable=False, default="#2563eb")
 
     logo_url = Column(String, nullable=True)
     favicon_url = Column(String, nullable=True)
+    font_family = Column(String, nullable=False, default="Inter")
 
-    font_family = Column(String, default="Inter")
-
-    # =========================
     # Content
-    # =========================
-    hero_title = Column(String, default="Professional services you can trust")
-    hero_subtitle = Column(String, default="Get in touch today for a fast response")
-    cta_text = Column(String, default="Request a quote")
+    hero_title = Column(String, nullable=False, default="Professional services you can trust")
+    hero_subtitle = Column(String, nullable=False, default="Get in touch today for a fast response")
+    cta_text = Column(String, nullable=False, default="Request a quote")
 
-    # =========================
     # Feature toggles
-    # =========================
-    show_enquiry_form = Column(Boolean, default=True)
-    show_testimonials = Column(Boolean, default=False)
-    show_pricing = Column(Boolean, default=False)
+    show_enquiry_form = Column(Boolean, nullable=False, default=True)
+    show_testimonials = Column(Boolean, nullable=False, default=False)
+    show_pricing = Column(Boolean, nullable=False, default=False)
+    animation_enabled = Column(Boolean, nullable=False, default=True)
 
-    # =========================
     # Advanced overrides
-    # =========================
     custom_css = Column(String, nullable=True)
 
-    # =========================
-    # Style
-    # =========================
-    border_radius = Column(String, default="medium")
-    text_alignment = Column(String, default="center")
-    button_style = Column(String, default="solid")
-    
-    # =========================
-    # New Content Properties
-    # =========================
+    # Layout / style
+    border_radius = Column(String, nullable=False, default="medium")
+    text_alignment = Column(String, nullable=False, default="center")
+    button_style = Column(String, nullable=False, default="solid")
+
+    # About
     about_title = Column(String, nullable=True)
     about_content = Column(String, nullable=True)
 
-    # Contact Info
+    # Contact info
     contact_email = Column(String, nullable=True)
     contact_phone = Column(String, nullable=True)
     contact_address = Column(String, nullable=True)
@@ -287,18 +311,23 @@ class BusinessCustomisation(Base):
     social_instagram = Column(String, nullable=True)
     social_linkedin = Column(String, nullable=True)
 
-    # Lists (Testimonials & Pricing)
-    testimonials = Column(JSON, default=list)
-    pricing_plans = Column(JSON, default=list)
-    
-    # Layout Order
-    section_order = Column(JSON, default=lambda: ["hero", "about", "testimonials", "pricing", "contact"])
-    
-    # Animations
-    animation_enabled = Column(Boolean, default=True)
+    # Lists
+    testimonials = Column(JSON, nullable=False, default=list)
+    pricing_plans = Column(JSON, nullable=False, default=list)
+
+    # Layout order
+    section_order = Column(
+        JSON,
+        nullable=False,
+        default=lambda: ["hero", "about", "testimonials", "pricing", "contact"],
+    )
 
     business = relationship("Business", back_populates="customisation")
 
+
+# =========================================================
+# BUSINESS AVAILABILITY
+# =========================================================
 class BusinessAvailability(Base):
     __tablename__ = "business_availability"
 
@@ -311,7 +340,6 @@ class BusinessAvailability(Base):
         nullable=False,
     )
 
-    # Opening hours (0 = Monday, 6 = Sunday)
     opening_hours = Column(
         JSON,
         nullable=False,
@@ -326,11 +354,15 @@ class BusinessAvailability(Base):
         },
     )
 
-    # Slot configuration
-    slot_length_minutes = Column(Integer, default=60)
-    buffer_minutes = Column(Integer, default=0)
+    slot_length_minutes = Column(Integer, nullable=False, default=60)
+    buffer_minutes = Column(Integer, nullable=False, default=30)
+    auto_confirm = Column(Boolean, nullable=False, default=True)
 
-    # Booking behaviour
-    auto_confirm = Column(Boolean, default=True)
+    closed = Column(Boolean, nullable=False, default=False)
+    timezone = Column(String, nullable=False, default="Europe/London")
 
-    business = relationship("Business", backref="availability")
+    business = relationship(
+        "Business",
+        backref=backref("availability", uselist=False),
+    )
+
