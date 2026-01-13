@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 
-from app.db.models import Business, Enquiry, BusinessCustomisation, Visit
+from app.db.models import Business, Enquiry, BusinessCustomisation, Visit, Booking
 from app.db.session import get_db
 from app.core.config import RESERVED_SLUGS
 from app.schemas.enquiry import EnquiryCreate
-from app.services.email import send_enquiry_notification
-
+from app.services.email import send_enquiry_notification, send_booking_pending_business, send_booking_pending_customer
+from app.schemas.booking import PublicBookingCreate
 router = APIRouter(
     prefix="/public",
     tags=["Public"],  # ✅ MUST be a list
@@ -118,7 +118,6 @@ def get_public_business(
 
     return response_data
 
-
 @router.post("/enquiry")
 def create_public_enquiry(
     slug: str,
@@ -191,4 +190,60 @@ def track_visit(
     db.add(visit)
     db.commit()
     
+    return {"success": True}
+
+@router.post("/booking")
+def create_public_booking(
+    slug: str,
+    payload: PublicBookingCreate,
+    db: Session = Depends(get_db),
+):
+    business = (
+        db.query(Business)
+        .filter(Business.slug == slug, Business.is_active == True)
+        .first()
+    )
+
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    # Overlap protection
+    conflict = (
+        db.query(Booking)
+        .filter(
+            Booking.business_id == business.id,
+            Booking.start_time < payload.end_time,
+            Booking.end_time > payload.start_time,
+        )
+        .first()
+    )
+
+    if conflict:
+        raise HTTPException(status_code=400, detail="Time slot unavailable")
+
+    booking = Booking(
+        business_id=business.id,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+        status="pending",
+    )
+
+    db.add(booking)
+    db.commit()
+    db.refresh(booking)
+
+    # Emails
+    send_booking_pending_business(
+        business_email=business.email,
+        business_name=business.name,
+        customer_email=payload.customer_email,
+        start_time=payload.start_time,
+    )
+
+    send_booking_pending_customer(
+        customer_email=payload.customer_email,
+        business_name=business.name,
+        start_time=payload.start_time,
+    )
+
     return {"success": True}
