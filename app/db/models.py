@@ -298,3 +298,39 @@ class BusinessCustomisation(Base):
     animation_enabled = Column(Boolean, default=True)
 
     business = relationship("Business", back_populates="customisation")
+
+class BusinessAvailability(Base):
+    __tablename__ = "business_availability"
+
+    id = Column(Integer, primary_key=True)
+
+    business_id = Column(
+        Integer,
+        ForeignKey("businesses.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+
+    # Opening hours (0 = Monday, 6 = Sunday)
+    opening_hours = Column(
+        JSON,
+        nullable=False,
+        default=lambda: {
+            "0": {"start": "09:00", "end": "17:00"},
+            "1": {"start": "09:00", "end": "17:00"},
+            "2": {"start": "09:00", "end": "17:00"},
+            "3": {"start": "09:00", "end": "17:00"},
+            "4": {"start": "09:00", "end": "17:00"},
+            "5": None,
+            "6": None,
+        },
+    )
+
+    # Slot configuration
+    slot_length_minutes = Column(Integer, default=60)
+    buffer_minutes = Column(Integer, default=0)
+
+    # Booking behaviour
+    auto_confirm = Column(Boolean, default=True)
+
+    business = relationship("Business", backref="availability")
