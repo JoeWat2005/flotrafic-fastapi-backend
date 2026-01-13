@@ -20,17 +20,15 @@ def create_checkout(
     business: Business = Depends(get_current_business),
 ):
     """
-    Creates a checkout session that ALWAYS includes:
-    - Platform & maintenance (£10/month)
-    - Optional managed OR autopilot tier
-    - Optional one-time setup fee (first checkout only)
+    Creates a Stripe Checkout Session for a subscription.
+
+    - Foundation / Managed / Autopilot (monthly)
+    - No setup fee
     """
 
-    line_items = []
+    # Default to foundation if no tier specified
+    selected_tier = tier or "foundation"
 
-    # Determine Price ID based on tier (Single Price ID Model)
-    selected_tier = tier if tier else "foundation"
-    
     if selected_tier == "foundation":
         price_id = stripe_config.FOUNDATION_PRICE_ID
     elif selected_tier == "managed":
@@ -40,14 +38,9 @@ def create_checkout(
     else:
         raise HTTPException(status_code=400, detail="Invalid tier")
 
-    # Add the main subscription item
-    line_items.append({"price": price_id, "quantity": 1})
-
-    # One-time setup fee (only if never paid before)
-    if not business.stripe_subscription_id and stripe_config.SETUP_PRICE_ID:
-        line_items.append(
-            {"price": stripe_config.SETUP_PRICE_ID, "quantity": 1}
-        )
+    line_items = [
+        {"price": price_id, "quantity": 1}
+    ]
 
     # Create Stripe customer if needed
     if not business.stripe_customer_id:
@@ -67,7 +60,7 @@ def create_checkout(
         cancel_url="https://yourdomain.co.uk/dashboard?billing=cancel",
         metadata={
             "business_id": str(business.id),
-            "tier": tier or "foundation",
+            "tier": selected_tier,
         },
     )
 
@@ -76,7 +69,7 @@ def create_checkout(
         actor_type="business",
         actor_id=business.id,
         action="billing.checkout_started",
-        details=f"tier={tier or 'foundation'}",
+        details=f"tier={selected_tier}",
     )
 
     return {"checkout_url": session.url}

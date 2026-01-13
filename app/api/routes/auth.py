@@ -247,7 +247,6 @@ def start_checkout(
         payment_method_types=["card"],
         customer_email=business.email,
         line_items=[
-            {"price": settings.STRIPE_SETUP_PRICE_ID, "quantity": 1},
             {"price": price_id, "quantity": 1},
         ],
         metadata={

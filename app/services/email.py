@@ -7,7 +7,7 @@ from app.core.config import settings
 
 
 # -------------------------------------------------------------------
-# Sanity checks (fail fast)
+# Sanity checks
 # -------------------------------------------------------------------
 if not settings.BREVO_API_KEY:
     raise RuntimeError("BREVO_API_KEY is not set")
@@ -27,15 +27,6 @@ brevo = sib_api_v3_sdk.TransactionalEmailsApi(client)
 # Internal helper (ONLY place that talks to Brevo)
 # -------------------------------------------------------------------
 def _send_email(*, to: str, template_id: int, params: dict[str, Any]) -> None:
-    """
-    Internal helper for sending Brevo transactional emails.
-    Raises RuntimeError on failure.
-    """
-    print("---- _send_email ----")
-    print("to:", to)
-    print("template_id:", template_id)
-    print("params:", params)
-
     try:
         email = sib_api_v3_sdk.SendSmtpEmail(
             to=[{"email": to}],
@@ -43,17 +34,15 @@ def _send_email(*, to: str, template_id: int, params: dict[str, Any]) -> None:
             params=params,
         )
         brevo.send_transac_email(email)
-        print("✓ Brevo send_transac_email OK")
 
     except ApiException as e:
-        print("❌ Brevo ApiException:", e)
         raise RuntimeError(
-            f"Brevo email failed (template {template_id}): {e}"
+            f"Brevo email failed (template {template_id})"
         ) from e
 
 
 # -------------------------------------------------------------------
-# Public API
+# Auth emails
 # -------------------------------------------------------------------
 def send_verification_email(*, user_email: str, code: str) -> None:
     _send_email(
@@ -77,6 +66,9 @@ def send_password_reset_email(*, user_email: str, code: str) -> None:
     )
 
 
+# -------------------------------------------------------------------
+# Enquiries
+# -------------------------------------------------------------------
 def send_enquiry_notification(
     *,
     business_email: str,
@@ -85,10 +77,6 @@ def send_enquiry_notification(
     customer_email: str,
     message: str,
 ) -> None:
-    print("=== send_enquiry_notification ===")
-    print("business_email:", business_email)
-    print("business_name:", business_name)
-
     _send_email(
         to=business_email,
         template_id=7,
@@ -101,6 +89,9 @@ def send_enquiry_notification(
     )
 
 
+# -------------------------------------------------------------------
+# Bookings
+# -------------------------------------------------------------------
 def send_booking_notification(
     *,
     business_email: str,
@@ -108,18 +99,10 @@ def send_booking_notification(
     customer_email: str | None,
     start_time: datetime,
 ) -> None:
-    print("=== send_booking_notification ===")
-    print("business_email:", business_email)
-    print("business_name:", business_name)
-    print("customer_email:", customer_email)
-    print("start_time:", start_time, type(start_time))
-
     formatted_date = start_time.strftime("%A, %d %B %Y")
     formatted_time = start_time.strftime("%H:%M")
 
-    # 1️⃣ Email business (CRITICAL)
-    print("→ Sending BUSINESS booking email")
-
+    # Business notification (CRITICAL)
     _send_email(
         to=business_email,
         template_id=8,
@@ -127,16 +110,12 @@ def send_booking_notification(
             "BUSINESS_NAME": business_name,
             "FORMATTED_DATE": formatted_date,
             "FORMATTED_TIME": formatted_time,
-            "CUSTOMER_EMAIL": customer_email,
+            "CUSTOMER_EMAIL": customer_email or "",
         },
     )
 
-    print("✓ Business booking email attempted")
-
-    # 2️⃣ Email customer (NON-CRITICAL)
+    # Customer confirmation (NON-CRITICAL)
     if customer_email:
-        print("→ Sending CUSTOMER booking email")
-
         try:
             _send_email(
                 to=customer_email,
@@ -148,10 +127,65 @@ def send_booking_notification(
                     "BUSINESS_EMAIL": business_email,
                 },
             )
-            print("✓ Customer booking email sent")
+        except RuntimeError:
+            pass
 
-        except RuntimeError as e:
-            print("⚠️ Customer email failed (non-critical):", e)
-    else:
-        print("⚠️ No customer email — skipping customer notification")
 
+# -------------------------------------------------------------------
+# Subscription lifecycle (PRODUCT state, not billing)
+# -------------------------------------------------------------------
+def send_subscription_activated_email(
+    *,
+    business_email: str,
+    tier: str,
+) -> None:
+    _send_email(
+        to=business_email,
+        template_id=10,
+        params={
+            "TIER": tier.capitalize(),
+            "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
+        },
+    )
+
+
+def send_subscription_cancelled_email(
+    *,
+    business_email: str,
+) -> None:
+    _send_email(
+        to=business_email,
+        template_id=11,
+        params={
+            "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
+        },
+    )
+
+
+def send_account_paused_email(
+    *,
+    business_email: str,
+) -> None:
+    _send_email(
+        to=business_email,
+        template_id=12,
+        params={
+            "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
+        },
+    )
+
+def send_subscription_plan_changed_email(
+    *,
+    business_email: str,
+    old_tier: str,
+    new_tier: str,
+) -> None:
+    _send_email(
+        to=business_email,
+        template_id=13,  # Subscription plan changed
+        params={
+            "OLD_TIER": old_tier.capitalize(),
+            "NEW_TIER": new_tier.capitalize(),
+            "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
+        },
+    )
