@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 
 from app.db.session import get_db
 from app.db.models import Business, Admin
-from app.core.jwt import SECRET_KEY, ALGORITHM
-from app.core.tiers import TIERS
+from app.core.security import SECRET_KEY, ALGORITHM
+from app.core.stripe import TIERS
 
 bearer_scheme = HTTPBearer()
 

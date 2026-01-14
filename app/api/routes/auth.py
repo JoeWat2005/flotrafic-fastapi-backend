@@ -25,8 +25,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 """
 AUTH ROUTES => AUTHENICATION
 
-1) AUTH/LOGIN => 
-2) AUTH/PRE_REGISTER => 
+1) AUTH/LOGIN => RATE LIMIT OF 5 REQUESTS / IP / 1 MINUTE
+2) AUTH/PRE-REGISTER => RATE LIMIT OF 3 REQUESTS / IP / 1 MINUTE
+3) AUTH/VERIFY-EMAIL-CODE => RATE LIMIT OF 5 REQUESTS / IP / 1 MINUTE
+4) AUTH/START-CHECKOUT => NO RATE LIMIT, PROTECTED BY "get_current_business_onboarding"
+5) AUTH/RESEND-VERIFICATION => RATE LIMIT OF 2 REQUESTS / EMAIL / 1 MINUTE
+6) AUTH/REQUEST-PASSWORD-RESET => RATE LIMIT OF 2 REQUESTS / EMAIL / 1 MINUTE
+7) AUTH/RESET-PASSWORD => RATE LIMIT OF 5 REQUESTS / IP / 1 MINUTE
 """ 
 
 #business login
@@ -284,12 +289,20 @@ def start_checkout(
 
     return {"checkout_url": session.url}
 
-#request resed verification
+#request resend verification
 @router.post("/resend-verification")
-def resend_verification(payload: dict, db: Session = Depends(get_db)):
+def resend_verification(
+    payload: dict,
+    db: Session = Depends(get_db),
+):
     email = (payload.get("email") or "").lower().strip()
 
     if not email:
+        return {"status": "ok"}
+
+    key = f"auth:resend-verification:{email}"
+    if not rate_limit(key, max_requests=2, window_seconds=60):
+        #silent rate limiting
         return {"status": "ok"}
 
     business = db.query(Business).filter(Business.email == email).first()
@@ -297,6 +310,7 @@ def resend_verification(payload: dict, db: Session = Depends(get_db)):
     if not business or business.email_verified:
         return {"status": "ok"}
 
+    #email verification code
     code = f"{secrets.randbelow(1_000_000):06d}"
     expires = datetime.now(timezone.utc) + timedelta(minutes=10)
 
@@ -308,19 +322,26 @@ def resend_verification(payload: dict, db: Session = Depends(get_db)):
     db.commit()
 
     send_verification_email(
-        user_email=business.email, 
-        code=code
+        user_email=business.email,
+        code=code,
     )
 
     return {"status": "ok"}
 
-
 #request reset password
 @router.post("/request-password-reset")
-def request_password_reset(payload: dict, db: Session = Depends(get_db)):
+def request_password_reset(
+    payload: dict,
+    db: Session = Depends(get_db),
+):
     email = (payload.get("email") or "").lower().strip()
 
     if not email:
+        return {"status": "ok"}
+
+    key = f"auth:password-reset:{email}"
+    if not rate_limit(key, max_requests=2, window_seconds=60):
+        #silent rate limiting
         return {"status": "ok"}
 
     business = db.query(Business).filter(Business.email == email).first()
@@ -328,6 +349,7 @@ def request_password_reset(payload: dict, db: Session = Depends(get_db)):
     if not business:
         return {"status": "ok"}
 
+    #password reset code
     code = f"{secrets.randbelow(1_000_000):06d}"
     expires = datetime.now(timezone.utc) + timedelta(minutes=10)
 
@@ -340,13 +362,25 @@ def request_password_reset(payload: dict, db: Session = Depends(get_db)):
         code=code,
     )
 
-
     return {"status": "ok"}
-
 
 #reset password
 @router.post("/reset-password")
-def reset_password(payload: dict, db: Session = Depends(get_db)):
+def reset_password(
+    payload: dict,
+    request: Request, 
+    db: Session = Depends(get_db)
+):
+    
+    ip = request.client.host if request.client else "unknown"
+    key = f"auth:reset-password:{ip}"
+
+    if not rate_limit(key, max_requests=5, window_seconds=60):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many attempts. Please try again later",
+        )
+
     email = (payload.get("email") or "").lower().strip()
     code = (payload.get("code") or "").strip()
     new_password = payload.get("new_password")
@@ -363,7 +397,7 @@ def reset_password(payload: dict, db: Session = Depends(get_db)):
     if not expires:
         raise HTTPException(status_code=400, detail="Invalid or expired reset code")
 
-    # Defensive timezone normalisation
+    #protective timezone normalisation
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
 
@@ -372,6 +406,9 @@ def reset_password(payload: dict, db: Session = Depends(get_db)):
         or datetime.now(timezone.utc) > expires
     ):
         raise HTTPException(status_code=400, detail="Invalid or expired reset code")
+    
+    if not new_password:
+        raise HTTPException(status_code=400, detail="Invalid reset code")
 
     business.hashed_password = hash_password(new_password)
     business.password_reset_code = None
