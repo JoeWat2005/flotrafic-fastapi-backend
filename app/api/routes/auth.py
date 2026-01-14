@@ -1,9 +1,7 @@
-from datetime import datetime, timezone, timedelta
-import secrets
-import stripe
-
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+import stripe
 
 from app.db.session import get_db
 from app.db.models import Business
@@ -13,9 +11,9 @@ from app.services.email import (
     send_verification_email,
     send_password_reset_email,
 )
-from app.core.utils import slugify
+from app.core.utils import slugify, generate_verification_code
 from app.api.deps import get_current_business_onboarding
-from app.core.config import settings, RESERVED_SLUGS
+from app.core.config import settings, RESERVED_SLUGS, RATE_LIMITS
 from app.services.audit import log_action
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -45,7 +43,8 @@ def login(
     ip = request.client.host if request.client else "unknown"
     key = f"auth:login:{ip}"
 
-    if not rate_limit(key, max_requests=5, window_seconds=60):
+    limit, window = RATE_LIMITS["login"]
+    if not rate_limit(key, limit, window):
         raise HTTPException(
             status_code=429,
             detail="Too many login attempts. Try again shortly.",
@@ -107,7 +106,8 @@ def pre_register(
     ip = request.client.host if request.client else "unknown"
     key = f"auth:pre-register:{ip}"
 
-    if not rate_limit(key, max_requests=3, window_seconds=60):
+    limit, window = RATE_LIMITS["pre_register"]
+    if not rate_limit(key, limit, window):
         raise HTTPException(
             status_code=429,
             detail="Too many registration attempts. Please wait.",
@@ -116,9 +116,7 @@ def pre_register(
     email = payload.email.lower().strip()
     name = payload.name.strip()
 
-    #email verification code
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    expires = datetime.now(timezone.utc) + timedelta(minutes=10)
+    code, expires = generate_verification_code()
 
     existing = db.query(Business).filter(Business.email == email).first()
 
@@ -200,7 +198,8 @@ def verify_email_code(
     ip = request.client.host if request.client else "unknown"
     key = f"auth:verify-email:{ip}"
 
-    if not rate_limit(key, max_requests=5, window_seconds=60):
+    limit, window = RATE_LIMITS["verify_email"]
+    if not rate_limit(key, limit, window):
         raise HTTPException(
             status_code=429,
             detail="Too many verification attempts. Please wait.",
@@ -301,8 +300,8 @@ def resend_verification(
         return {"status": "ok"}
 
     key = f"auth:resend-verification:{email}"
-    if not rate_limit(key, max_requests=2, window_seconds=60):
-        #silent rate limiting
+    limit, window = RATE_LIMITS["resend_verification"]
+    if not rate_limit(key, limit, window):
         return {"status": "ok"}
 
     business = db.query(Business).filter(Business.email == email).first()
@@ -310,9 +309,7 @@ def resend_verification(
     if not business or business.email_verified:
         return {"status": "ok"}
 
-    #email verification code
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    expires = datetime.now(timezone.utc) + timedelta(minutes=10)
+    code, expires = generate_verification_code()
 
     business.email_verification_code = code
     business.email_verification_expires = expires
@@ -339,19 +336,18 @@ def request_password_reset(
     if not email:
         return {"status": "ok"}
 
-    key = f"auth:password-reset:{email}"
-    if not rate_limit(key, max_requests=2, window_seconds=60):
-        #silent rate limiting
+    key = f"auth:request-password-reset:{email}"
+    limit, window = RATE_LIMITS["request_password_reset"]
+    if not rate_limit(key, limit, window):
         return {"status": "ok"}
+
 
     business = db.query(Business).filter(Business.email == email).first()
 
     if not business:
         return {"status": "ok"}
 
-    #password reset code
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    expires = datetime.now(timezone.utc) + timedelta(minutes=10)
+    code, expires = generate_verification_code()
 
     business.password_reset_code = code
     business.password_reset_expires = expires
@@ -375,7 +371,8 @@ def reset_password(
     ip = request.client.host if request.client else "unknown"
     key = f"auth:reset-password:{ip}"
 
-    if not rate_limit(key, max_requests=5, window_seconds=60):
+    limit, window = RATE_LIMITS["reset_password"]
+    if not rate_limit(key, limit, window):
         raise HTTPException(
             status_code=429,
             detail="Too many attempts. Please try again later",
@@ -405,6 +402,13 @@ def reset_password(
         business.password_reset_code != code
         or datetime.now(timezone.utc) > expires
     ):
+        log_action(
+            db=db,
+            actor_type="business",
+            actor_id=0,
+            action="auth.password_reset_failed",
+            details=f"email={email}",
+        )
         raise HTTPException(status_code=400, detail="Invalid or expired reset code")
     
     if not new_password:

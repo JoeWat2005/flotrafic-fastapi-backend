@@ -73,3 +73,15 @@ RESERVED_SLUGS = {
     "status",
 }
 
+RATE_LIMITS = {
+    "login": (5, 60),
+    "pre_register": (3, 60),
+    "verify_email": (5, 60),
+    "password_reset": (3, 60),
+    "resend_verification": (2, 60),
+    "request_password_reset": (2, 60),
+    "reset_password": (5, 60),
+    "enquiry": (5, 600),
+    "booking": (5, 600),
+    "visit": (30, 60),
+}

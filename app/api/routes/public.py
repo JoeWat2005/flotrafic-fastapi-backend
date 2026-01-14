@@ -3,14 +3,13 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Business, Enquiry, Visit, Booking
 from app.db.session import get_db
-from app.core.config import RESERVED_SLUGS
+from app.core.config import RESERVED_SLUGS, RATE_LIMITS
 from app.schemas.enquiry import EnquiryCreate
 from app.services.email import send_enquiry_notification, send_booking_pending_business, send_booking_pending_customer
 from app.schemas.booking import PublicBookingCreate
 from app.services.audit import log_action
 from app.core.security import rate_limit, make_key
 from app.core.utils import get_cached_business, set_cached_business
-
 router = APIRouter(
     prefix="/public",
     tags=["Public"],
@@ -108,8 +107,11 @@ def create_public_enquiry(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    
+    limit, window = RATE_LIMITS["enquiry"]
     key = make_key(slug, request, "enquiry")
-    if not rate_limit(key, max_requests=5, window_seconds=600):
+
+    if not rate_limit(key, limit, window):
         raise HTTPException(status_code=429, detail="Too many enquiries")
 
     business = (
@@ -170,8 +172,10 @@ def track_visit(
     if not slug:
         return {"success": False}
 
+    limit, window = RATE_LIMITS["visit"]
     key = make_key(slug, request, "visit")
-    if not rate_limit(key, max_requests=30, window_seconds=60):
+
+    if not rate_limit(key, limit, window):
         return {"success": True}
 
     business = db.query(Business).filter(Business.slug == slug).first()
@@ -196,8 +200,11 @@ def create_public_booking(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    
+    limit, window = RATE_LIMITS["booking"]
     key = make_key(slug, request, "booking")
-    if not rate_limit(key, max_requests=5, window_seconds=600):
+
+    if not rate_limit(key, limit, window):
         raise HTTPException(status_code=429, detail="Too many booking attempts")
 
     business = (

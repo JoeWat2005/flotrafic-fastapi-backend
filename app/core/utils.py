@@ -1,5 +1,6 @@
-import re
 from time import time
+from datetime import datetime, timezone, timedelta
+import re, secrets
 
 _PUBLIC_BUSINESS_CACHE = {}
 
@@ -25,3 +26,8 @@ def get_cached_business(slug: str):
 
 def set_cached_business(slug: str, data: dict):
     _PUBLIC_BUSINESS_CACHE[slug] = (data, time())
+
+def generate_verification_code(minutes_valid: int = 10) -> tuple[str, datetime]:
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    expires = datetime.now(timezone.utc) + timedelta(minutes=minutes_valid)
+    return code, expires
