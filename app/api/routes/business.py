@@ -19,49 +19,18 @@ router = APIRouter(
     dependencies=[Depends(get_current_admin)],
 )
 
+"""
+BUSINESS ROUTES => REQUIRE ADMIN AUTH
+"""
 
-@router.post("/", response_model=BusinessOut)
-def create_business(
-    payload: BusinessCreate,
-    db: Session = Depends(get_db),
-    admin = Depends(get_current_admin),
-):
-    existing = (
-        db.query(Business)
-        .filter(Business.email == payload.email)
-        .first()
-    )
-    if existing:
-        raise HTTPException(status_code=400, detail="Business already exists")
-
-    business = Business(
-        name=payload.name,
-        email=payload.email,
-        tier=payload.tier,
-        hashed_password=hash_password(payload.password),
-        is_active=True,
-    )
-
-    db.add(business)
-    db.commit()
-    db.refresh(business)
-
-    log_action(
-        db=db,
-        actor_type="admin",
-        actor_id=admin.id,
-        action="business.created",
-        details=f"business_id={business.id}",
-    )
-
-    return business
-
-
+#get businesses
 @router.get("/", response_model=List[BusinessOut])
-def list_businesses(db: Session = Depends(get_db)):
+def list_businesses(
+    db: Session = Depends(get_db),
+):
     return db.query(Business).order_by(Business.id).all()
 
-
+#update business tier
 @router.patch("/{business_id}/tier", response_model=BusinessOut)
 def update_business_tier(
     business_id: int,
@@ -69,7 +38,7 @@ def update_business_tier(
     db: Session = Depends(get_db),
     admin = Depends(get_current_admin),
 ):
-    business = db.query(Business).get(business_id)
+    business = db.get(Business, business_id)
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
 
@@ -86,14 +55,14 @@ def update_business_tier(
 
     return business
 
-
+#suspend business
 @router.patch("/{business_id}/suspend", response_model=BusinessOut)
 def suspend_business(
     business_id: int,
     db: Session = Depends(get_db),
     admin = Depends(get_current_admin),
 ):
-    business = db.query(Business).get(business_id)
+    business = db.get(Business, business_id)
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
 
@@ -110,14 +79,14 @@ def suspend_business(
 
     return business
 
-
+#activate business
 @router.patch("/{business_id}/activate", response_model=BusinessOut)
 def activate_business(
     business_id: int,
     db: Session = Depends(get_db),
     admin = Depends(get_current_admin),
 ):
-    business = db.query(Business).get(business_id)
+    business = db.get(Business, business_id)
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
 
@@ -134,14 +103,14 @@ def activate_business(
 
     return business
 
-
+#delete business
 @router.delete("/{business_id}", response_model=dict)
 def delete_business(
     business_id: int,
     db: Session = Depends(get_db),
     admin = Depends(get_current_admin),
 ):
-    business = db.query(Business).get(business_id)
+    business = db.get(Business, business_id)
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
 

@@ -185,13 +185,7 @@ def pre_register(payload: PreRegisterRequest, db: Session = Depends(get_db)):
     return {"status": "code_sent"}
 
 
-# ===================================================================
-# VERIFY EMAIL CODE
-# ===================================================================
-# - CAPTCHA enforced (prevents brute force)
-# - Time-bound, one-time code
-# - Enumeration-safe
-# ===================================================================
+#verify email verification code
 @router.post("/verify-email-code")
 def verify_email_code(payload: dict, db: Session = Depends(get_db)):
     captcha_token = payload.get("captcha_token")
@@ -240,13 +234,7 @@ def verify_email_code(payload: dict, db: Session = Depends(get_db)):
     return {"status": "verified"}
 
 
-# ===================================================================
-# STRIPE CHECKOUT
-# ===================================================================
-# - Requires verified identity
-# - Allows inactive onboarding accounts
-# - Stripe webhooks activate the account
-# ===================================================================
+#launch stripe checkout
 @router.post("/start-checkout")
 def start_checkout(
     business: Business = Depends(get_current_business_onboarding),
@@ -284,13 +272,7 @@ def start_checkout(
     return {"checkout_url": session.url}
 
 
-# ===================================================================
-# RESEND VERIFICATION
-# ===================================================================
-# - Enumeration-safe
-# - Retry-safe
-# - Always returns success
-# ===================================================================
+#request resed verification
 @router.post("/resend-verification")
 def resend_verification(payload: dict, db: Session = Depends(get_db)):
     email = (payload.get("email") or "").lower().strip()
@@ -321,13 +303,7 @@ def resend_verification(payload: dict, db: Session = Depends(get_db)):
     return {"status": "ok"}
 
 
-# ===================================================================
-# REQUEST PASSWORD RESET
-# ===================================================================
-# - Enumeration-safe
-# - No CAPTCHA (email delivery is the gate)
-# - Overwrites previous reset attempts
-# ===================================================================
+#request reset password
 @router.post("/request-password-reset")
 def request_password_reset(payload: dict, db: Session = Depends(get_db)):
     email = (payload.get("email") or "").lower().strip()
@@ -356,13 +332,7 @@ def request_password_reset(payload: dict, db: Session = Depends(get_db)):
     return {"status": "ok"}
 
 
-# ===================================================================
-# RESET PASSWORD
-# ===================================================================
-# - CAPTCHA enforced (prevents brute force)
-# - Time-bound, one-time reset code
-# - Clears reset state on success
-# ===================================================================
+#reset password
 @router.post("/reset-password")
 def reset_password(payload: dict, db: Session = Depends(get_db)):
     email = (payload.get("email") or "").lower().strip()

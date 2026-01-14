@@ -5,31 +5,37 @@ import os
 
 from app.db.session import get_db
 from app.db.models import Business, BusinessCustomisation
-from app.api.deps import get_current_business
+from app.api.deps import get_current_business, require_feature
 from app.schemas.customisation import CustomisationOut, CustomisationUpdate
 from app.services.audit import log_action
 
 router = APIRouter(
     prefix="/customisation",
     tags=["Website Customisation"],
+    dependencies=[Depends(require_feature("customisation"))],
 )
 
+"""
+CUSTOMISATION ROUTES => REQUIRE FEATURE "customisation" AND BUSINES AUTH
+"""
+
+#get customisation
 @router.get("/", response_model=CustomisationOut)
 def get_customisation(
     db: Session = Depends(get_db),
     business: Business = Depends(get_current_business),
 ):
     cust = business.customisation
-    
-    # If it doesn't exist, create default
+
     if not cust:
         cust = BusinessCustomisation(business_id=business.id)
         db.add(cust)
         db.commit()
         db.refresh(cust)
-        
+
     return cust
 
+#update customisation
 @router.patch("/", response_model=CustomisationOut)
 def update_customisation(
     payload: CustomisationUpdate,
@@ -40,15 +46,15 @@ def update_customisation(
     if not cust:
         cust = BusinessCustomisation(business_id=business.id)
         db.add(cust)
-    
+
     update_data = payload.model_dump(exclude_unset=True)
 
     update_data.pop("logo_path", None)
     update_data.pop("logo_url", None)
-    
+
     for field, value in update_data.items():
         setattr(cust, field, value)
-        
+
     db.commit()
     db.refresh(cust)
 
@@ -59,33 +65,38 @@ def update_customisation(
         action="customisation.updated",
         details="fields=" + ",".join(update_data.keys()),
     )
-    
+
     return cust
 
+#upload logo
 @router.post("/logo")
 def upload_logo(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     business: Business = Depends(get_current_business),
 ):
-    if file.content_type not in ("image/png", "image/jpeg", "image/webp"):
+    content_type_to_ext = {
+        "image/png": "png",
+        "image/jpeg": "jpg",
+        "image/webp": "webp",
+    }
+
+    if file.content_type not in content_type_to_ext:
         raise HTTPException(400, "Unsupported image type")
 
-    # Ensure customisation exists
     cust = business.customisation
     if not cust:
         cust = BusinessCustomisation(business_id=business.id)
         db.add(cust)
         db.flush()
 
-    # Delete old logo if exists
+    # Delete old logo
     if cust.logo_path:
         old_path = os.path.join("uploads", cust.logo_path)
         if os.path.exists(old_path):
             os.remove(old_path)
 
-    # Generate safe filename
-    ext = file.filename.split(".")[-1].lower()
+    ext = content_type_to_ext[file.content_type]
     filename = f"{uuid4()}.{ext}"
 
     upload_dir = "uploads/logos"
@@ -98,5 +109,13 @@ def upload_logo(
 
     cust.logo_path = f"logos/{filename}"
     db.commit()
+
+    log_action(
+        db=db,
+        actor_type="business",
+        actor_id=business.id,
+        action="customisation.logo_uploaded",
+        details=f"filename={filename}",
+    )
 
     return {"success": True}

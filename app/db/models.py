@@ -10,6 +10,7 @@ from sqlalchemy import (
     JSON,
     CheckConstraint,
     UniqueConstraint,
+    Text,
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship, backref
@@ -166,6 +167,9 @@ class Booking(Base):
 
     start_time = Column(DateTime(timezone=True), nullable=False)
     end_time = Column(DateTime(timezone=True), nullable=False)
+
+    business_note = Column(Text, nullable=True)
+    customer_note = Column(Text, nullable=True)
 
     status = Column(BookingStatusEnum, nullable=False, default="pending")
 

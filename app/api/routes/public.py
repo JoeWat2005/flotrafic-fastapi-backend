@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from sqlalchemy.orm import Session
 
 from app.db.models import Business, Enquiry, Visit, Booking
@@ -8,13 +8,26 @@ from app.schemas.enquiry import EnquiryCreate
 from app.services.email import send_enquiry_notification, send_booking_pending_business, send_booking_pending_customer
 from app.schemas.booking import PublicBookingCreate
 from app.services.audit import log_action
+from app.core.rate_limit import rate_limit, make_key
+from app.core.cache import get_cached_business, set_cached_business
 
 router = APIRouter(
     prefix="/public",
-    tags=["Public"],  # ✅ MUST be a list
+    tags=["Public"],
 )
+"""
+PUBLIC ROUTES => NO FEATURE GATING OR BUSINESS AUTH
 
+INSTEAD:
 
+1) PUBLIC/BUSINESS => USES CACHING
+2) PUBLIC/ENQUIRY => RATE LIMIT OF 5 REQUESTS / IP / BUSINESS / 10 MINUTES
+3) PUBLIC/BOOKING => RATE LIMIT OF 5 REQUESTS / IP / BUSINESS / 10 MINUTES
+4) PUBLIC/VISIT => RATE LIMIT OF 30 REQUESTS / IP / BUSINESS / 1 MINUTE (OVER THIS IGNORED)
+
+"""
+
+#get public business info
 @router.get("/business")
 def get_public_business(
     slug: str,
@@ -23,6 +36,10 @@ def get_public_business(
     if slug in RESERVED_SLUGS:
         raise HTTPException(status_code=404, detail="Business not found")
 
+    cached = get_cached_business(slug)
+    if cached:
+        return cached
+
     business = (
         db.query(Business)
         .filter(Business.slug == slug)
@@ -32,101 +49,69 @@ def get_public_business(
     if not business or not business.is_active:
         raise HTTPException(status_code=404, detail="Business not found")
 
-    # Get customisation or defaults
     cust = business.customisation
-    
-    # Defaults if no customisation record exists
+
     response_data = {
         "id": business.id,
         "name": business.name,
         "slug": business.slug,
         "customisation": {
-            "primary_color": "#000000",
-            "secondary_color": "#ffffff",
-            "accent_color": "#2563eb",
-            "logo_url": None,
-            "font_family": "Inter",
-            
-            "hero_title": "Professional services you can trust",
-            "hero_subtitle": "Get in touch today for a fast response",
-            "cta_text": "Request a quote",
-            
-            "about_title": None,
-            "about_content": None,
-            
-            "contact_email": None,
-            "contact_phone": None,
-            "contact_address": None,
-            
-            "social_facebook": None,
-            "social_twitter": None,
-            "social_instagram": None,
-            "social_linkedin": None,
-            
-            "show_enquiry_form": True,
-            "show_pricing": False,
-            "show_testimonials": False,
-            
-            "testimonials": [],
-            "pricing_plans": [],
-            
-            "border_radius": "medium",
-            "text_alignment": "center",
-            "button_style": "solid",
-            
-            "section_order": ["hero", "about", "testimonials", "pricing", "contact"],
-            "animation_enabled": True,
+            "primary_color": cust.primary_color if cust else "#000000",
+            "secondary_color": cust.secondary_color if cust else "#ffffff",
+            "accent_color": cust.accent_color if cust else "#2563eb",
+            "logo_url": cust.logo_url if cust else None,
+            "font_family": cust.font_family if cust else "Inter",
+
+            "hero_title": cust.hero_title if cust else "Professional services you can trust",
+            "hero_subtitle": cust.hero_subtitle if cust else "Get in touch today for a fast response",
+            "cta_text": cust.cta_text if cust else "Request a quote",
+
+            "about_title": cust.about_title if cust else None,
+            "about_content": cust.about_content if cust else None,
+
+            "contact_email": cust.contact_email if cust else None,
+            "contact_phone": cust.contact_phone if cust else None,
+            "contact_address": cust.contact_address if cust else None,
+
+            "social_facebook": cust.social_facebook if cust else None,
+            "social_twitter": cust.social_twitter if cust else None,
+            "social_instagram": cust.social_instagram if cust else None,
+            "social_linkedin": cust.social_linkedin if cust else None,
+
+            "show_enquiry_form": cust.show_enquiry_form if cust else True,
+            "show_pricing": cust.show_pricing if cust else False,
+            "show_testimonials": cust.show_testimonials if cust else False,
+
+            "testimonials": cust.testimonials if cust else [],
+            "pricing_plans": cust.pricing_plans if cust else [],
+
+            "border_radius": cust.border_radius if cust else "medium",
+            "text_alignment": cust.text_alignment if cust else "center",
+            "button_style": cust.button_style if cust else "solid",
+
+            "section_order": cust.section_order if cust else [
+                "hero", "about", "testimonials", "pricing", "contact"
+            ],
+            "animation_enabled": cust.animation_enabled if cust else True,
         }
     }
 
-    if cust:
-        response_data["customisation"] = {
-            "primary_color": cust.primary_color,
-            "secondary_color": cust.secondary_color,
-            "accent_color": cust.accent_color,
-            "logo_url": cust.logo_url,
-            "font_family": cust.font_family,
-            
-            "hero_title": cust.hero_title,
-            "hero_subtitle": cust.hero_subtitle,
-            "cta_text": cust.cta_text,
-            
-            "about_title": cust.about_title,
-            "about_content": cust.about_content,
-            
-            "contact_email": cust.contact_email,
-            "contact_phone": cust.contact_phone,
-            "contact_address": cust.contact_address,
-            
-            "social_facebook": cust.social_facebook,
-            "social_twitter": cust.social_twitter,
-            "social_instagram": cust.social_instagram,
-            "social_linkedin": cust.social_linkedin,
-            
-            "show_enquiry_form": cust.show_enquiry_form,
-            "show_pricing": cust.show_pricing,
-            "show_testimonials": cust.show_testimonials,
-            
-            "testimonials": cust.testimonials,
-            "pricing_plans": cust.pricing_plans,
-            
-            "border_radius": cust.border_radius,
-            "text_alignment": cust.text_alignment,
-            "button_style": cust.button_style,
-            
-            "section_order": cust.section_order,
-            "animation_enabled": cust.animation_enabled,
-        }
+    set_cached_business(slug, response_data)
 
     return response_data
 
+#public customer enquiry creation
 @router.post("/enquiry")
 def create_public_enquiry(
     slug: str,
     payload: EnquiryCreate,
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    # 1. Validate Business
+    key = make_key(slug, request, "enquiry")
+    if not rate_limit(key, max_requests=5, window_seconds=600):
+        raise HTTPException(status_code=429, detail="Too many enquiries")
+
     business = (
         db.query(Business)
         .filter(Business.slug == slug)
@@ -136,16 +121,13 @@ def create_public_enquiry(
     if not business or not business.is_active:
         raise HTTPException(status_code=404, detail="Business not found")
 
-    # 2. Check if enquiries are enabled for this business
-    # If no customisation record, default is True (as per our default dict above)
     enquiries_enabled = True
     if business.customisation:
         enquiries_enabled = business.customisation.show_enquiry_form
-    
-    if not enquiries_enabled:
-        raise HTTPException(status_code=400, detail="Enquiries are disabled for this business")
 
-    # 3. Create Enquiry
+    if not enquiries_enabled:
+        raise HTTPException(status_code=400, detail="Enquiries are disabled")
+
     enquiry = Enquiry(
         name=payload.name,
         email=payload.email,
@@ -167,7 +149,6 @@ def create_public_enquiry(
         details=f"enquiry_id={enquiry.id}",
     )
 
-    # 4. Send Email Notification
     send_enquiry_notification(
         business_email=business.email,
         business_name=business.name,
@@ -176,22 +157,27 @@ def create_public_enquiry(
         message=payload.message,
     )
 
+    return {"success": True}
 
-    return {"success": True, "message": "Enquiry sent successfully"}
-
+#track website visits
 @router.post("/visit")
 def track_visit(
     payload: dict = Body(...),
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
     slug = payload.get("slug")
     if not slug:
         return {"success": False}
-        
+
+    key = make_key(slug, request, "visit")
+    if not rate_limit(key, max_requests=30, window_seconds=60):
+        return {"success": True}
+
     business = db.query(Business).filter(Business.slug == slug).first()
     if not business:
         return {"success": False}
-        
+
     visit = Visit(
         business_id=business.id,
         path=payload.get("path", "/"),
@@ -199,15 +185,21 @@ def track_visit(
     )
     db.add(visit)
     db.commit()
-    
+
     return {"success": True}
 
+#public customer booking creation
 @router.post("/booking")
 def create_public_booking(
     slug: str,
     payload: PublicBookingCreate,
+    request: Request,
     db: Session = Depends(get_db),
 ):
+    key = make_key(slug, request, "booking")
+    if not rate_limit(key, max_requests=5, window_seconds=600):
+        raise HTTPException(status_code=429, detail="Too many booking attempts")
+
     business = (
         db.query(Business)
         .filter(Business.slug == slug, Business.is_active == True)
@@ -217,7 +209,6 @@ def create_public_booking(
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
 
-    # Overlap protection
     conflict = (
         db.query(Booking)
         .filter(
@@ -250,7 +241,6 @@ def create_public_booking(
         details=f"booking_id={booking.id}",
     )
 
-    # Emails
     send_booking_pending_business(
         business_email=business.email,
         business_name=business.name,

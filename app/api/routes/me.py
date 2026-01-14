@@ -4,21 +4,20 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_business
 from app.db.session import get_db
 from app.db.models import Business
-from app.core.security import verify_password, hash_password
-from app.schemas.me import UpdateMe, ChangePassword
+from app.schemas.me import UpdateMe
 from app.services.audit import log_action
 
 router = APIRouter(
     prefix="/me",
     tags=["Me"],
+    dependencies=[Depends(get_current_business)],
 )
 
+"""
+ENQUIRIES ROUTES => REQUIRE BUSINESS AUTH
+"""
 
-# -------------------------------------------------------------------
-# GET /me
-# - identity endpoint
-# - no branching
-# -------------------------------------------------------------------
+#get me info
 @router.get("/")
 def get_me(
     business: Business = Depends(get_current_business),
@@ -32,12 +31,7 @@ def get_me(
         "slug": business.slug,
     }
 
-
-# -------------------------------------------------------------------
-# GET /me/billing
-# - informational only
-# - no validation logic
-# -------------------------------------------------------------------
+#get billing info
 @router.get("/billing")
 def get_billing(
     business: Business = Depends(get_current_business),
@@ -51,19 +45,19 @@ def get_billing(
         "stripe_subscription_id": business.stripe_subscription_id,
     }
 
-
-# -------------------------------------------------------------------
-# PATCH /me
-# - frontend gates name validity
-# - backend enforces ownership only
-# -------------------------------------------------------------------
+#update profile
 @router.patch("/")
 def update_me(
     payload: UpdateMe,
     db: Session = Depends(get_db),
     business: Business = Depends(get_current_business),
 ):
-    business.name = payload.name.strip()
+    name = payload.name.strip()
+
+    if not name:
+        raise HTTPException(400, "Name cannot be empty")
+
+    business.name = name
     db.commit()
 
     log_action(
@@ -80,34 +74,3 @@ def update_me(
         "tier": business.tier,
         "is_active": business.is_active,
     }
-
-
-# -------------------------------------------------------------------
-# POST /me/change-password
-# - frontend gates password strength
-# - backend enforces auth boundary
-# -------------------------------------------------------------------
-@router.post("/change-password")
-def change_password(
-    payload: ChangePassword,
-    db: Session = Depends(get_db),
-    business: Business = Depends(get_current_business),
-):
-    # Auth boundary: must know current password
-    if not verify_password(payload.old_password, business.hashed_password):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid credentials",
-        )
-
-    business.hashed_password = hash_password(payload.new_password)
-    db.commit()
-
-    log_action(
-        db=db,
-        actor_type="business",
-        actor_id=business.id,
-        action="account.password_changed",
-    )
-
-    return {"status": "ok"}

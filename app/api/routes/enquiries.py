@@ -8,15 +8,17 @@ from app.schemas.enquiry import EnquiryOut
 from app.api.deps import get_current_business, require_feature
 from app.services.audit import log_action
 
-
-# 🔒 Enquiries: create = ALL TIERS, manage = enquiries_manage
 router = APIRouter(
     prefix="/enquiries",
     tags=["Enquiries"],
-    dependencies=[Depends(get_current_business)],
+    dependencies=[Depends(require_feature("enquiries_manage"))],
 )
 
+"""
+ENQUIRIES ROUTES => REQUIRE FEATURE "enquiries_manage" AND BUSINESS AUTH
+"""
 
+#get enquiries, by read, status or with sorting
 @router.get("/", response_model=List[EnquiryOut])
 def get_enquiries(
     is_read: Optional[bool] = Query(None),
@@ -25,12 +27,9 @@ def get_enquiries(
     limit: int = Query(20, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_business: Business = Depends(require_feature("enquiries_manage")),
+    business: Business = Depends(get_current_business),
 ):
-    query = (
-        db.query(Enquiry)
-        .filter(Enquiry.business_id == current_business.id)
-    )
+    query = db.query(Enquiry).filter(Enquiry.business_id == business.id)
 
     if is_read is not None:
         query = query.filter(Enquiry.is_read == is_read)
@@ -50,30 +49,29 @@ def get_enquiries(
             Enquiry.status.asc(),
             Enquiry.created_at.desc(),
         )
-    else:  # newest
+    else:
         query = query.order_by(Enquiry.created_at.desc())
 
     return query.offset(offset).limit(limit).all()
 
-
-
-@router.patch("/{enquiry_id}/read", response_model=dict)
+#mark enquiry as read
+@router.patch("/{enquiry_id}/read")
 def mark_enquiry_read(
     enquiry_id: int,
     db: Session = Depends(get_db),
-    current_business: Business = Depends(require_feature("enquiries_manage")),
+    business: Business = Depends(get_current_business),
 ):
     enquiry = (
         db.query(Enquiry)
         .filter(
             Enquiry.id == enquiry_id,
-            Enquiry.business_id == current_business.id,
+            Enquiry.business_id == business.id,
         )
         .first()
     )
 
     if not enquiry:
-        raise HTTPException(status_code=404, detail="Enquiry not found")
+        raise HTTPException(404, "Enquiry not found")
 
     enquiry.is_read = True
     db.commit()
@@ -81,32 +79,32 @@ def mark_enquiry_read(
     log_action(
         db=db,
         actor_type="business",
-        actor_id=current_business.id,
+        actor_id=business.id,
         action="enquiry.marked_read",
         details=f"enquiry_id={enquiry.id}",
     )
 
     return {"success": True}
 
-
-@router.patch("/{enquiry_id}/status", response_model=dict)
+#update enquiry status
+@router.patch("/{enquiry_id}/status")
 def update_enquiry_status(
     enquiry_id: int,
-    status: str = Query(..., pattern="^(new|in_progress|resolved)$"),
+    status: Literal["new", "in_progress", "resolved"] = Query(...),
     db: Session = Depends(get_db),
-    current_business: Business = Depends(require_feature("enquiries_manage")),
+    business: Business = Depends(get_current_business),
 ):
     enquiry = (
         db.query(Enquiry)
         .filter(
             Enquiry.id == enquiry_id,
-            Enquiry.business_id == current_business.id,
+            Enquiry.business_id == business.id,
         )
         .first()
     )
 
     if not enquiry:
-        raise HTTPException(status_code=404, detail="Enquiry not found")
+        raise HTTPException(404, "Enquiry not found")
 
     enquiry.status = status
     db.commit()
@@ -114,36 +112,36 @@ def update_enquiry_status(
     log_action(
         db=db,
         actor_type="business",
-        actor_id=current_business.id,
+        actor_id=business.id,
         action="enquiry.status_changed",
         details=f"enquiry_id={enquiry.id},status={status}",
     )
 
     return {"success": True}
 
-
-@router.delete("/{enquiry_id}", response_model=dict)
+#delete enquiry
+@router.delete("/{enquiry_id}")
 def delete_enquiry(
     enquiry_id: int,
     db: Session = Depends(get_db),
-    current_business: Business = Depends(require_feature("enquiries_manage")),
+    business: Business = Depends(get_current_business),
 ):
     enquiry = (
         db.query(Enquiry)
         .filter(
             Enquiry.id == enquiry_id,
-            Enquiry.business_id == current_business.id,
+            Enquiry.business_id == business.id,
         )
         .first()
     )
 
     if not enquiry:
-        raise HTTPException(status_code=404, detail="Enquiry not found")
+        raise HTTPException(404, "Enquiry not found")
 
     if enquiry.bookings:
         raise HTTPException(
-            status_code=400,
-            detail="Cannot delete enquiry with existing booking",
+            400,
+            "Cannot delete enquiry with existing booking",
         )
 
     db.delete(enquiry)
@@ -152,17 +150,18 @@ def delete_enquiry(
     log_action(
         db=db,
         actor_type="business",
-        actor_id=current_business.id,
+        actor_id=business.id,
         action="enquiry.deleted",
         details=f"enquiry_id={enquiry_id}",
     )
 
     return {"success": True}
 
+#enquiry statistics (move in future)
 @router.get("/stats")
 def enquiry_stats(
     db: Session = Depends(get_db),
-    business: Business = Depends(require_feature("enquiries_manage")),
+    business: Business = Depends(get_current_business),
 ):
     return {
         "total": db.query(Enquiry)
@@ -172,7 +171,7 @@ def enquiry_stats(
         "unread": db.query(Enquiry)
             .filter(
                 Enquiry.business_id == business.id,
-                Enquiry.is_read == False,
+                Enquiry.is_read.is_(False),
             )
             .count(),
 
@@ -182,26 +181,8 @@ def enquiry_stats(
                 Enquiry.status == "new",
             )
             .count(),
-            
+
         "visits": db.query(Visit)
             .filter(Visit.business_id == business.id)
-            .count()
+            .count(),
     }
-
-
-@router.patch("/bulk-read")
-def mark_all_read(
-    db: Session = Depends(get_db),
-    business: Business = Depends(require_feature("enquiries_manage")),
-):
-    (
-        db.query(Enquiry)
-        .filter(
-            Enquiry.business_id == business.id,
-            Enquiry.is_read == False,
-        )
-        .update({Enquiry.is_read: True})
-    )
-    db.commit()
-
-    return {"success": True}
