@@ -2,47 +2,50 @@ from datetime import datetime, timezone, timedelta
 import secrets
 import stripe
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db.models import Business
 from app.schemas.auth import PreRegisterRequest
-from app.core.security import hash_password, verify_password
-from app.core.security import create_access_token, verify_captcha
+from app.core.security import hash_password, verify_password, create_access_token, verify_captcha, rate_limit
 from app.services.email import (
     send_verification_email,
     send_password_reset_email,
 )
 from app.core.utils import slugify
 from app.api.deps import get_current_business_onboarding
-from app.core.config import settings
+from app.core.config import settings, RESERVED_SLUGS
 from app.services.audit import log_action
 
-RESERVED_SLUGS = {"api", "www", "admin", "dashboard"}
-
-
-# -------------------------------------------------------------------
-# Stripe configuration
-# -------------------------------------------------------------------
-# Stripe is used only after identity is verified.
-# Webhooks remain the source of truth for subscription state.
 stripe.api_key = settings.STRIPE_SECRET_KEY
-
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+"""
+AUTH ROUTES => AUTHENICATION
 
-# ===================================================================
-# LOGIN
-# ===================================================================
-# - Frontend guarantees format + non-empty inputs
-# - Backend enforces authentication boundary only
-# - Enumeration-safe (generic error)
-# - Clears any outstanding password reset state on success
-# ===================================================================
+1) AUTH/LOGIN => 
+2) AUTH/PRE_REGISTER => 
+""" 
+
+#business login
 @router.post("/login")
-def login(payload: dict, db: Session = Depends(get_db)):
+def login(
+    payload: dict,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    
+    ip = request.client.host if request.client else "unknown"
+    key = f"auth:login:{ip}"
+
+    if not rate_limit(key, max_requests=5, window_seconds=60):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts. Try again shortly.",
+        )
+    
     email = (payload.get("username") or "").lower().strip()
     password = payload.get("password") or ""
 
@@ -52,7 +55,6 @@ def login(payload: dict, db: Session = Depends(get_db)):
         .first()
     )
 
-    # Generic error prevents user enumeration
     if not business or not verify_password(password, business.hashed_password):
 
         log_action(
@@ -63,19 +65,18 @@ def login(payload: dict, db: Session = Depends(get_db)):
             details=f"email={email}",
         )
 
-        raise HTTPException(status_code=400, detail="Invalid email or password")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    # Email verification is a hard boundary
     if not business.email_verified:
         raise HTTPException(status_code=403, detail="Email not verified")
 
-    # If the user logged in successfully, any reset window is no longer needed
     if business.password_reset_code:
         business.password_reset_code = None
         business.password_reset_expires = None
-        db.commit()
+    
+    db.commit()
 
-        log_action(
+    log_action(
             db=db,
             actor_type="business",
             actor_id=business.id,
@@ -83,36 +84,40 @@ def login(payload: dict, db: Session = Depends(get_db)):
         )
 
     token = create_access_token({"sub": str(business.id)})
+    
 
     return {
         "access_token": token,
         "token_type": "bearer",
     }
 
-
-# ===================================================================
-# PRE-REGISTER (SIGNUP)
-# ===================================================================
-# - Frontend enforces minimum validation
-# - Backend enforces uniqueness and safe retries
-# - Supports idempotent signup attempts
-# - Never creates duplicate accounts
-# ===================================================================
+#business pre-register
 @router.post("/pre-register")
-def pre_register(payload: PreRegisterRequest, db: Session = Depends(get_db)):
+def pre_register(
+    payload: PreRegisterRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    
+    ip = request.client.host if request.client else "unknown"
+    key = f"auth:pre-register:{ip}"
+
+    if not rate_limit(key, max_requests=3, window_seconds=60):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many registration attempts. Please wait.",
+        )
+    
     email = payload.email.lower().strip()
     name = payload.name.strip()
 
-    # Short-lived verification code
+    #email verification code
     code = f"{secrets.randbelow(1_000_000):06d}"
     expires = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     existing = db.query(Business).filter(Business.email == email).first()
 
-    # ---------------------------------------------------------------
-    # SAFE RETRY
-    # Email exists but has not been verified yet
-    # ---------------------------------------------------------------
+    #safe retry for unverified emails
     if existing:
         if existing.email_verified:
             raise HTTPException(
@@ -120,7 +125,6 @@ def pre_register(payload: PreRegisterRequest, db: Session = Depends(get_db)):
                 detail="An account with this email already exists",
             )
 
-        # Overwrite previous attempt safely
         existing.hashed_password = hash_password(payload.password)
         existing.tier = payload.tier
         existing.email_verification_code = code
@@ -137,10 +141,7 @@ def pre_register(payload: PreRegisterRequest, db: Session = Depends(get_db)):
 
         return {"status": "code_resent"}
 
-    # ---------------------------------------------------------------
-    # NEW ACCOUNT
-    # ---------------------------------------------------------------
-    # Business name must be unique
+    #new account creation
     slug = slugify(name)
 
     if not slug:
@@ -152,7 +153,7 @@ def pre_register(payload: PreRegisterRequest, db: Session = Depends(get_db)):
     if slug in RESERVED_SLUGS:
         raise HTTPException(
             status_code=400,
-            details="This business name is reserved"
+            detail="This business name is reserved"
         )
     
     if db.query(Business).filter(Business.slug == slug).first():
@@ -183,10 +184,23 @@ def pre_register(payload: PreRegisterRequest, db: Session = Depends(get_db)):
 
     return {"status": "code_sent"}
 
-
 #verify email verification code
 @router.post("/verify-email-code")
-def verify_email_code(payload: dict, db: Session = Depends(get_db)):
+def verify_email_code(
+    payload: dict, 
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    
+    ip = request.client.host if request.client else "unknown"
+    key = f"auth:verify-email:{ip}"
+
+    if not rate_limit(key, max_requests=5, window_seconds=60):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many verification attempts. Please wait.",
+        )
+    
     captcha_token = payload.get("captcha_token")
     verify_captcha(captcha_token)
 
@@ -198,7 +212,7 @@ def verify_email_code(payload: dict, db: Session = Depends(get_db)):
     if not business:
         raise HTTPException(status_code=400, detail="Invalid verification code")
 
-    # Idempotent: already verified is not an error
+    #already verified - don't error
     if business.email_verified:
         return {"status": "already_verified"}
 
@@ -206,7 +220,7 @@ def verify_email_code(payload: dict, db: Session = Depends(get_db)):
     if not expires:
         raise HTTPException(status_code=400, detail="Invalid verification code")
 
-    # Defensive timezone normalisation (SQLite safety)
+    #protective timezone normalisation
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
 
@@ -216,7 +230,7 @@ def verify_email_code(payload: dict, db: Session = Depends(get_db)):
     if business.email_verification_code != code:
         raise HTTPException(status_code=400, detail="Invalid verification code")
 
-    # Mark verified and permanently invalidate code
+    #mark business as verified and invalidate code
     business.email_verified = True
     business.email_verification_code = None
     business.email_verification_expires = None
@@ -232,14 +246,13 @@ def verify_email_code(payload: dict, db: Session = Depends(get_db)):
 
     return {"status": "verified"}
 
-
 #launch stripe checkout
 @router.post("/start-checkout")
 def start_checkout(
+    #not public
     business: Business = Depends(get_current_business_onboarding),
-    db: Session = Depends(get_db),
 ):
-    # Prevent duplicate subscriptions
+    
     if business.stripe_subscription_status in ("active", "trialing"):
         raise HTTPException(status_code=400, detail="Subscription already active")
 
@@ -264,12 +277,12 @@ def start_checkout(
             "business_id": str(business.id),
             "tier": business.tier,
         },
-        success_url = f"{settings.FRONTEND_URL}/{business.slug}/dashboard",
-        cancel_url  = f"{settings.FRONTEND_URL}/{business.slug}/dashboard",
+        success_url=f"{settings.FRONTEND_URL}/{business.slug}/dashboard",
+        cancel_url=f"{settings.FRONTEND_URL}/{business.slug}/dashboard",
+        idempotency_key=f"checkout:{business.id}:{business.tier}",
     )
 
     return {"checkout_url": session.url}
-
 
 #request resed verification
 @router.post("/resend-verification")

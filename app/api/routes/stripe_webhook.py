@@ -16,6 +16,10 @@ from app.core.config import settings
 
 router = APIRouter(prefix="/stripe", tags=["Stripe"])
 
+"""
+STRIPE WEBHOOK ROUTES => AUTHENICATION HANDLED BY STRIPE
+""" 
+
 stripe.api_key = settings.STRIPE_SECRET_KEY
 WEBHOOK_SECRET = settings.STRIPE_WEBHOOK_SECRET
 
