@@ -11,11 +11,11 @@ from app.services.audit import log_action
 router = APIRouter(
     prefix="/enquiries",
     tags=["Enquiries"],
-    dependencies=[Depends(require_feature("enquiries_manage"))],
+    dependencies=[Depends(require_feature("enquiries"))],
 )
 
 """
-ENQUIRIES ROUTES => REQUIRE FEATURE "enquiries_manage" AND BUSINESS AUTH
+ENQUIRIES ROUTES => REQUIRE FEATURE "enquiries" AND BUSINESS AUTH
 """
 
 #get enquiries, by read, status or with sorting

@@ -22,11 +22,8 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     STRIPE_SECRET_KEY: str
     STRIPE_WEBHOOK_SECRET: str
-
-    STRIPE_FOUNDATION_PRICE_ID: str
-    STRIPE_MANAGED_PRICE_ID: str
-    STRIPE_AUTOPILOT_PRICE_ID: str
-    STRIPE_SETUP_PRICE_ID: str | None = None
+    
+    STRIPE_PRO_PRICE_ID: str
 
     # ------------------------------------------------------------------
     # Cloudflare Turnstile

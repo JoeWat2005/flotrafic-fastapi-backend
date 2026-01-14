@@ -29,9 +29,7 @@ def create_checkout(
     selected_tier = tier or "foundation"
 
     tier_prices = {
-        "foundation": stripe_config.FOUNDATION_PRICE_ID,
-        "managed": stripe_config.MANAGED_PRICE_ID,
-        "autopilot": stripe_config.AUTOPILOT_PRICE_ID,
+        "pro": stripe_config.PRO_PRICE_ID,
     }
 
     price_id = tier_prices.get(selected_tier)
