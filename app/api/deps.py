@@ -9,31 +9,33 @@ from app.db.models import Business, Admin
 from app.core.security import SECRET_KEY, ALGORITHM
 from app.core.stripe import TIERS
 
-bearer_scheme = HTTPBearer()
+#do not auto error
+bearer_scheme = HTTPBearer(auto_error=False)
 
-
-# -------------------------------------------------------------------
-# TOKEN DECODE
-# - single responsibility
-# - no UX messaging
-# -------------------------------------------------------------------
+#decode jwt token
 def decode_token(token: str) -> dict:
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+        exp = payload.get("exp")
+        if exp is not None:
+            if datetime.fromtimestamp(exp, tz=timezone.utc) < datetime.now(timezone.utc):
+                raise HTTPException(status_code=401, detail="Token expired")
+
+        return payload
+
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-
-# -------------------------------------------------------------------
-# STRICT BUSINESS AUTH
-# - verified
-# - active
-# - NOT admin
-# -------------------------------------------------------------------
+#enforce strict business auth
 def get_current_business(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> Business:
+
+    if not creds or not creds.credentials:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     payload = decode_token(creds.credentials)
 
     if payload.get("type") == "admin":
@@ -55,17 +57,15 @@ def get_current_business(
 
     return business
 
-
-# -------------------------------------------------------------------
-# ONBOARDING BUSINESS AUTH
-# - verified
-# - NOT active yet
-# - used ONLY for checkout / onboarding
-# -------------------------------------------------------------------
+#enforce strict onboarding business auth
 def get_current_business_onboarding(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> Business:
+
+    if not creds or not creds.credentials:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     payload = decode_token(creds.credentials)
 
     if payload.get("type") == "admin":
@@ -84,15 +84,15 @@ def get_current_business_onboarding(
 
     return business
 
-
-# -------------------------------------------------------------------
-# ADMIN AUTH
-# - admin token only
-# -------------------------------------------------------------------
+#enforce strict admin auth
 def get_current_admin(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> Admin:
+
+    if not creds or not creds.credentials:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     payload = decode_token(creds.credentials)
 
     if payload.get("type") != "admin":
@@ -108,25 +108,15 @@ def get_current_admin(
 
     return admin
 
-
-# -------------------------------------------------------------------
-# FEATURE / TIER ENFORCEMENT
-# - depends on STRICT business auth
-# - minimal error surface
-# -------------------------------------------------------------------
+#enforce strict feature auth / payment auth
 def require_feature(feature: str):
     def _check(business: Business = Depends(get_current_business)):
 
-        # -------------------------
-        # FEATURE AVAILABILITY
-        # -------------------------
+        #check if feature is available
         if not TIERS.get(business.tier, {}).get(feature):
             raise HTTPException(status_code=403, detail="Upgrade required")
 
-        # -------------------------
-        # BILLING ENFORCEMENT
-        # (non-foundation only)
-        # -------------------------
+        #check business is paying
         if business.tier != "foundation":
             if business.stripe_subscription_status not in ("active", "trialing"):
                 raise HTTPException(status_code=402, detail="Payment required")
@@ -142,4 +132,3 @@ def require_feature(feature: str):
         return business
 
     return _check
-
