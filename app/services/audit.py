@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 from app.db.models import AuditLog
 
-
 def log_action(
     db: Session,
     actor_type: str,
@@ -18,6 +17,6 @@ def log_action(
         )
         db.add(log)
         db.flush()
+        
     except Exception:
-        # Don't let audit logging break the real request
         db.rollback()

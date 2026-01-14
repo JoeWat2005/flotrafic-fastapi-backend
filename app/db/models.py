@@ -375,3 +375,12 @@ class BusinessAvailability(Base):
         backref=backref("availability", uselist=False),
     )
 
+class StripeEvent(Base):
+    __tablename__ = "stripe_events"
+
+    event_id = Column(String, primary_key=True)
+    received_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )

@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.db.models import Business, Admin
+from app.db.models import Admin
 from app.core.security import hash_password
 
 def seed_admin(db: Session):

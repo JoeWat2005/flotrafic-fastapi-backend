@@ -9,8 +9,7 @@ from app.db.session import get_db
 from app.db.models import Business
 from app.schemas.auth import PreRegisterRequest
 from app.core.security import hash_password, verify_password
-from app.core.jwt import create_access_token
-from app.core.captcha import verify_captcha
+from app.core.security import create_access_token, verify_captcha
 from app.services.email import (
     send_verification_email,
     send_password_reset_email,

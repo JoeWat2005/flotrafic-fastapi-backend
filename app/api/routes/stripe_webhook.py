@@ -4,7 +4,7 @@ import stripe
 from datetime import datetime, timezone
 
 from app.db.session import SessionLocal
-from app.db.models import Business
+from app.db.models import Business, StripeEvent
 from app.services.audit import log_action
 from app.services.email import (
     send_subscription_activated_email,
@@ -19,28 +19,28 @@ router = APIRouter(prefix="/stripe", tags=["Stripe"])
 stripe.api_key = settings.STRIPE_SECRET_KEY
 WEBHOOK_SECRET = settings.STRIPE_WEBHOOK_SECRET
 
-
+#timestamp to datetime helper function
 def _ts_to_dt(ts: int | None):
     if not ts:
         return None
     return datetime.fromtimestamp(ts, tz=timezone.utc)
 
-
+#stripe subscription state fetch helper function
 def _safe_stripe_subscription_refresh(business: Business):
-    sub_id = business.stripe_subscription_id
-    if not sub_id:
+    if not business.stripe_subscription_id:
         return
 
     try:
-        sub = stripe.Subscription.retrieve(sub_id)
+        sub = stripe.Subscription.retrieve(business.stripe_subscription_id)
         business.stripe_subscription_status = getattr(sub, "status", None)
         business.stripe_current_period_end = _ts_to_dt(
             getattr(sub, "current_period_end", None)
         )
+
     except Exception:
         return
 
-
+#webhook listening route
 @router.post("/webhook")
 async def stripe_webhook(request: Request):
     payload = await request.body()
@@ -63,19 +63,24 @@ async def stripe_webhook(request: Request):
     db: Session = SessionLocal()
 
     try:
+        event_id = event.get("id")
         event_type = event.get("type")
         obj = (event.get("data") or {}).get("object") or {}
         handled = False
 
-        # =========================
-        # CHECKOUT COMPLETED
-        # =========================
+        #handle duplicate events
+        already_handled = db.get(StripeEvent, event_id)
+        if already_handled:
+            return {"status": "ok", "handled": True, "duplicate": True}
+
+
+        #checkout completed event received
         if event_type == "checkout.session.completed":
             metadata = obj.get("metadata") or {}
             business_id = metadata.get("business_id")
 
             business = (
-                db.query(Business).get(int(business_id))
+                db.get(Business, int(business_id))
                 if business_id
                 else None
             )
@@ -94,8 +99,6 @@ async def stripe_webhook(request: Request):
                         tier=metadata.get("tier", "foundation"),
                     )
 
-                db.commit()
-
                 log_action(
                     db=db,
                     actor_type="system",
@@ -106,10 +109,7 @@ async def stripe_webhook(request: Request):
 
                 handled = True
 
-        # =========================
-        # CURRENT PERIOD END    
-        # =========================
-
+        #invoice paid event received
         elif event_type == "invoice.paid":
             sub_id = obj.get("subscription")
 
@@ -124,12 +124,9 @@ async def stripe_webhook(request: Request):
             if business:
                 _safe_stripe_subscription_refresh(business)
                 business.is_active = True
-                db.commit()
                 handled = True
 
-        # =========================
-        # SUBSCRIPTION UPDATED
-        # =========================
+        #subscripition updated event received
         elif event_type == "customer.subscription.updated":
             sub_id = obj.get("id")
 
@@ -144,7 +141,6 @@ async def stripe_webhook(request: Request):
             if business:
                 old_tier = business.tier
 
-                # Determine new tier from price ID
                 items = obj.get("items", {}).get("data", [])
                 price_id = items[0]["price"]["id"] if items else None
 
@@ -155,7 +151,7 @@ async def stripe_webhook(request: Request):
                 elif price_id == settings.AUTOPILOT_PRICE_ID:
                     new_tier = "autopilot"
                 else:
-                    new_tier = old_tier  # fallback safety
+                    new_tier = old_tier
 
                 business.tier = new_tier
                 business.stripe_subscription_status = obj.get("status")
@@ -167,8 +163,6 @@ async def stripe_webhook(request: Request):
                     "trialing",
                 )
 
-                db.commit()
-
                 log_action(
                     db=db,
                     actor_type="system",
@@ -177,7 +171,6 @@ async def stripe_webhook(request: Request):
                     details=f"{old_tier}->{new_tier}",
                 )
 
-                # ✅ Only email if tier actually changed
                 if old_tier and old_tier != new_tier:
                     send_subscription_plan_changed_email(
                         business_email=business.email,
@@ -187,9 +180,7 @@ async def stripe_webhook(request: Request):
 
                 handled = True
 
-        # =========================
-        # SUBSCRIPTION CANCELLED
-        # =========================
+        #subscription cancelled event received
         elif event_type == "customer.subscription.deleted":
             sub_id = obj.get("id")
 
@@ -204,7 +195,6 @@ async def stripe_webhook(request: Request):
             if business:
                 business.is_active = False
                 business.stripe_subscription_status = "canceled"
-                db.commit()
 
                 log_action(
                     db=db,
@@ -219,9 +209,7 @@ async def stripe_webhook(request: Request):
 
                 handled = True
 
-        # =========================
-        # PAYMENT FAILED
-        # =========================
+        #payment failed event received
         elif event_type == "invoice.payment_failed":
             sub_id = obj.get("subscription")
             cust_id = obj.get("customer")
@@ -244,7 +232,6 @@ async def stripe_webhook(request: Request):
             if business:
                 business.is_active = False
                 business.stripe_subscription_status = "past_due"
-                db.commit()
 
                 log_action(
                     db=db,
@@ -259,9 +246,9 @@ async def stripe_webhook(request: Request):
 
                 handled = True
 
+        db.add(StripeEvent(event_id=event_id))
+        db.commit()
         return {"status": "ok", "handled": handled}
 
     finally:
         db.close()
-
-

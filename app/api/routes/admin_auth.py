@@ -4,9 +4,8 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.models import Admin
 from app.core.security import verify_password
-from app.core.jwt import create_access_token
+from app.core.security import create_access_token, rate_limit   
 from app.services.audit import log_action
-from app.core.rate_limit import rate_limit
 from app.schemas.admin_auth import AdminLogin
 
 router = APIRouter(prefix="/admin/auth", tags=["Admin Auth"])
