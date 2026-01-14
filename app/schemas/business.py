@@ -6,7 +6,7 @@ class BusinessCreate(BaseModel):
     name: str
     email: EmailStr
     password: str
-    tier: Literal["foundation", "managed", "autopilot"]
+    tier: Literal["free", "pro"]
 
 
 class BusinessOut(BaseModel):
@@ -20,5 +20,5 @@ class BusinessOut(BaseModel):
 
 
 class BusinessTierUpdate(BaseModel):
-    tier: Literal["foundation", "managed", "autopilot"]
+    tier: Literal["free", "pro"]
 

@@ -21,9 +21,8 @@ from app.db.base import Base
 # SHARED ENUMS (avoid duplication issues)
 # =========================================================
 TierEnum = Enum(
-    "foundation",
-    "managed",
-    "autopilot",
+    "free",
+    "pro",
     name="tier_enum",
 )
 
@@ -70,7 +69,7 @@ class Business(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     slug = Column(String, unique=True, nullable=False, index=True)
 
-    tier = Column(TierEnum, nullable=False, default="foundation")
+    tier = Column(TierEnum, nullable=False, default="free")
 
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)

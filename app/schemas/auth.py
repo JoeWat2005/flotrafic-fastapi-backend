@@ -17,7 +17,7 @@ class PreRegisterRequest(BaseModel):
     email: EmailStr
     password: str
     confirm_password: str
-    tier: Literal["foundation", "managed", "autopilot"]
+    tier: Literal["free", "pro"]
 
     @field_validator("password")
     @classmethod

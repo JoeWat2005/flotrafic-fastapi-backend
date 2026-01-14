@@ -117,7 +117,7 @@ def require_feature(feature: str):
             raise HTTPException(status_code=403, detail="Upgrade required")
 
         #check business is paying
-        if business.tier != "foundation":
+        if business.tier != "free":
             if business.stripe_subscription_status not in ("active", "trialing"):
                 raise HTTPException(status_code=402, detail="Payment required")
 
