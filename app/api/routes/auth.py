@@ -37,11 +37,13 @@ AUTH ROUTES => AUTHENICATION
 def login(
     payload: dict,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    
+    email = (payload.get("username") or "").lower().strip()
+    password = payload.get("password") or ""
+
     ip = request.client.host if request.client else "unknown"
-    key = f"auth:login:{ip}"
+    key = f"auth:login:{ip}:{email}"
 
     limit, window = RATE_LIMITS["login"]
     if not rate_limit(key, limit, window):
@@ -49,18 +51,10 @@ def login(
             status_code=429,
             detail="Too many login attempts. Try again shortly.",
         )
-    
-    email = (payload.get("username") or "").lower().strip()
-    password = payload.get("password") or ""
 
-    business = (
-        db.query(Business)
-        .filter(Business.email == email)
-        .first()
-    )
+    business = db.query(Business).filter(Business.email == email).first()
 
     if not business or not verify_password(password, business.hashed_password):
-
         log_action(
             db=db,
             actor_type="business",
@@ -68,7 +62,6 @@ def login(
             action="auth.login_failed",
             details=f"email={email}",
         )
-
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not business.email_verified:
@@ -77,34 +70,32 @@ def login(
     if business.password_reset_code:
         business.password_reset_code = None
         business.password_reset_expires = None
-    
+
     db.commit()
 
     log_action(
-            db=db,
-            actor_type="business",
-            actor_id=business.id,
-            action="auth.login",
-        )
+        db=db,
+        actor_type="business",
+        actor_id=business.id,
+        action="auth.login",
+    )
 
     token = create_access_token({"sub": str(business.id)})
-    
 
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-    }
+    return {"access_token": token, "token_type": "bearer"}
 
 #business pre-register
 @router.post("/pre-register")
 def pre_register(
     payload: PreRegisterRequest,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    
+    email = payload.email.lower().strip()
+    name = payload.name.strip()
+
     ip = request.client.host if request.client else "unknown"
-    key = f"auth:pre-register:{ip}"
+    key = f"auth:pre-register:{ip}:{email}"
 
     limit, window = RATE_LIMITS["pre_register"]
     if not rate_limit(key, limit, window):
@@ -112,15 +103,12 @@ def pre_register(
             status_code=429,
             detail="Too many registration attempts. Please wait.",
         )
-    
-    email = payload.email.lower().strip()
-    name = payload.name.strip()
 
     code, expires = generate_verification_code()
 
     existing = db.query(Business).filter(Business.email == email).first()
 
-    #safe retry for unverified emails
+    # Safe retry for unverified emails
     if existing:
         if existing.email_verified:
             raise HTTPException(
@@ -137,28 +125,24 @@ def pre_register(
 
         db.commit()
 
-        send_verification_email(
-            user_email=existing.email, 
-            code=code
-        )
-
+        send_verification_email(user_email=existing.email, code=code)
         return {"status": "code_resent"}
 
-    #new account creation
+    # New account creation
     slug = slugify(name)
 
     if not slug:
         raise HTTPException(
             status_code=400,
-            detail="Business name must contain letters or numbers"
+            detail="Business name must contain letters or numbers",
         )
-    
+
     if slug in RESERVED_SLUGS:
         raise HTTPException(
             status_code=400,
-            detail="This business name is reserved"
+            detail="This business name is reserved",
         )
-    
+
     if db.query(Business).filter(Business.slug == slug).first():
         raise HTTPException(
             status_code=400,
@@ -180,23 +164,21 @@ def pre_register(
     db.add(business)
     db.commit()
 
-    send_verification_email(
-        user_email=business.email, 
-        code=code
-    )
-
+    send_verification_email(user_email=business.email, code=code)
     return {"status": "code_sent"}
 
 #verify email verification code
 @router.post("/verify-email-code")
 def verify_email_code(
-    payload: dict, 
+    payload: dict,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    
+    email = (payload.get("email") or "").lower().strip()
+    code = (payload.get("code") or "").strip()
+
     ip = request.client.host if request.client else "unknown"
-    key = f"auth:verify-email:{ip}"
+    key = f"auth:verify-email-code:{ip}:{email}"
 
     limit, window = RATE_LIMITS["verify_email"]
     if not rate_limit(key, limit, window):
@@ -204,19 +186,15 @@ def verify_email_code(
             status_code=429,
             detail="Too many verification attempts. Please wait.",
         )
-    
+
     captcha_token = payload.get("captcha_token")
     verify_captcha(captcha_token)
 
-    email = (payload.get("email") or "").lower().strip()
-    code = (payload.get("code") or "").strip()
-
     business = db.query(Business).filter(Business.email == email).first()
-
     if not business:
         raise HTTPException(status_code=400, detail="Invalid verification code")
 
-    #already verified - don't error
+    # Idempotent: already verified is not an error
     if business.email_verified:
         return {"status": "already_verified"}
 
@@ -224,7 +202,7 @@ def verify_email_code(
     if not expires:
         raise HTTPException(status_code=400, detail="Invalid verification code")
 
-    #protective timezone normalisation
+    # Defensive timezone normalisation
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
 
@@ -234,7 +212,6 @@ def verify_email_code(
     if business.email_verification_code != code:
         raise HTTPException(status_code=400, detail="Invalid verification code")
 
-    #mark business as verified and invalidate code
     business.email_verified = True
     business.email_verification_code = None
     business.email_verification_expires = None
@@ -253,10 +230,8 @@ def verify_email_code(
 #launch stripe checkout
 @router.post("/start-checkout")
 def start_checkout(
-    #not public
     business: Business = Depends(get_current_business_onboarding),
 ):
-    
     if business.stripe_subscription_status in ("active", "trialing"):
         raise HTTPException(status_code=400, detail="Subscription already active")
 
@@ -274,13 +249,8 @@ def start_checkout(
         mode="subscription",
         payment_method_types=["card"],
         customer_email=business.email,
-        line_items=[
-            {"price": price_id, "quantity": 1},
-        ],
-        metadata={
-            "business_id": str(business.id),
-            "tier": business.tier,
-        },
+        line_items=[{"price": price_id, "quantity": 1}],
+        metadata={"business_id": str(business.id), "tier": business.tier},
         success_url=f"{settings.FRONTEND_URL}/{business.slug}/dashboard",
         cancel_url=f"{settings.FRONTEND_URL}/{business.slug}/dashboard",
         idempotency_key=f"checkout:{business.id}:{business.tier}",
@@ -295,7 +265,6 @@ def resend_verification(
     db: Session = Depends(get_db),
 ):
     email = (payload.get("email") or "").lower().strip()
-
     if not email:
         return {"status": "ok"}
 
@@ -305,7 +274,6 @@ def resend_verification(
         return {"status": "ok"}
 
     business = db.query(Business).filter(Business.email == email).first()
-
     if not business or business.email_verified:
         return {"status": "ok"}
 
@@ -318,21 +286,17 @@ def resend_verification(
 
     db.commit()
 
-    send_verification_email(
-        user_email=business.email,
-        code=code,
-    )
-
+    send_verification_email(user_email=business.email, code=code)
     return {"status": "ok"}
 
 #request reset password
+@router.post("/request-password-reset")
 @router.post("/request-password-reset")
 def request_password_reset(
     payload: dict,
     db: Session = Depends(get_db),
 ):
     email = (payload.get("email") or "").lower().strip()
-
     if not email:
         return {"status": "ok"}
 
@@ -341,9 +305,7 @@ def request_password_reset(
     if not rate_limit(key, limit, window):
         return {"status": "ok"}
 
-
     business = db.query(Business).filter(Business.email == email).first()
-
     if not business:
         return {"status": "ok"}
 
@@ -353,23 +315,20 @@ def request_password_reset(
     business.password_reset_expires = expires
     db.commit()
 
-    send_password_reset_email(
-        user_email=business.email,
-        code=code,
-    )
-
+    send_password_reset_email(user_email=business.email, code=code)
     return {"status": "ok"}
 
 #reset password
 @router.post("/reset-password")
 def reset_password(
     payload: dict,
-    request: Request, 
-    db: Session = Depends(get_db)
+    request: Request,
+    db: Session = Depends(get_db),
 ):
-    
+    email = (payload.get("email") or "").lower().strip()
+
     ip = request.client.host if request.client else "unknown"
-    key = f"auth:reset-password:{ip}"
+    key = f"auth:reset-password:{ip}:{email}"
 
     limit, window = RATE_LIMITS["reset_password"]
     if not rate_limit(key, limit, window):
@@ -378,15 +337,16 @@ def reset_password(
             detail="Too many attempts. Please try again later",
         )
 
-    email = (payload.get("email") or "").lower().strip()
     code = (payload.get("code") or "").strip()
     new_password = payload.get("new_password")
     captcha_token = payload.get("captcha_token")
 
     verify_captcha(captcha_token)
 
-    business = db.query(Business).filter(Business.email == email).first()
+    if not new_password:
+        raise HTTPException(status_code=400, detail="Invalid reset code")
 
+    business = db.query(Business).filter(Business.email == email).first()
     if not business:
         raise HTTPException(status_code=400, detail="Invalid reset code")
 
@@ -394,14 +354,10 @@ def reset_password(
     if not expires:
         raise HTTPException(status_code=400, detail="Invalid or expired reset code")
 
-    #protective timezone normalisation
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
 
-    if (
-        business.password_reset_code != code
-        or datetime.now(timezone.utc) > expires
-    ):
+    if business.password_reset_code != code or datetime.now(timezone.utc) > expires:
         log_action(
             db=db,
             actor_type="business",
@@ -410,14 +366,10 @@ def reset_password(
             details=f"email={email}",
         )
         raise HTTPException(status_code=400, detail="Invalid or expired reset code")
-    
-    if not new_password:
-        raise HTTPException(status_code=400, detail="Invalid reset code")
 
     business.hashed_password = hash_password(new_password)
     business.password_reset_code = None
     business.password_reset_expires = None
-
     db.commit()
 
     log_action(
@@ -428,4 +380,3 @@ def reset_password(
     )
 
     return {"status": "ok"}
-
