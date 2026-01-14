@@ -216,6 +216,9 @@ def verify_email_code(
     business.email_verification_code = None
     business.email_verification_expires = None
 
+    if business.tier == "free":
+        business.is_active == True
+
     db.commit()
 
     log_action(
@@ -232,28 +235,26 @@ def verify_email_code(
 def start_checkout(
     business: Business = Depends(get_current_business_onboarding),
 ):
-    if business.stripe_subscription_status in ("active", "trialing"):
-        raise HTTPException(status_code=400, detail="Subscription already active")
+    # Only free users should ever hit this
+    if business.tier != "free":
+        raise HTTPException(status_code=400, detail="Already on paid plan")
 
-    tier_prices = {
-        "foundation": settings.STRIPE_FOUNDATION_PRICE_ID,
-        "managed": settings.STRIPE_MANAGED_PRICE_ID,
-        "autopilot": settings.STRIPE_AUTOPILOT_PRICE_ID,
-    }
-
-    price_id = tier_prices.get(business.tier)
+    price_id = settings.STRIPE_PRO_PRICE_ID
     if not price_id:
-        raise HTTPException(status_code=400, detail="Invalid tier")
+        raise HTTPException(status_code=500, detail="Pro price not configured")
 
     session = stripe.checkout.Session.create(
         mode="subscription",
         payment_method_types=["card"],
         customer_email=business.email,
         line_items=[{"price": price_id, "quantity": 1}],
-        metadata={"business_id": str(business.id), "tier": business.tier},
+        metadata={
+            "business_id": str(business.id),
+            "tier": "pro",
+        },
         success_url=f"{settings.FRONTEND_URL}/{business.slug}/dashboard",
         cancel_url=f"{settings.FRONTEND_URL}/{business.slug}/dashboard",
-        idempotency_key=f"checkout:{business.id}:{business.tier}",
+        idempotency_key=f"checkout:{business.id}:pro",
     )
 
     return {"checkout_url": session.url}

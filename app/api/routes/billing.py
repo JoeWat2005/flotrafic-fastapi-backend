@@ -8,6 +8,7 @@ from app.db.models import Business
 from app.api.deps import get_current_business
 from app.core import stripe as stripe_config
 from app.services.audit import log_action
+from app.core.config import settings
 
 router = APIRouter(
     prefix="/billing",
@@ -22,19 +23,15 @@ BILLING ROUTES => REQUIRE BUSINESS AUTH
 #launch stripe checkout
 @router.post("/checkout")
 def create_checkout(
-    tier: str | None = None,
-    db: Session = Depends(get_db),
     business: Business = Depends(get_current_business),
+    db: Session = Depends(get_db),
 ):
-    selected_tier = tier or "foundation"
+    if business.tier == "pro":
+        raise HTTPException(400, "Already on Pro")
 
-    tier_prices = {
-        "pro": stripe_config.PRO_PRICE_ID,
-    }
-
-    price_id = tier_prices.get(selected_tier)
+    price_id = stripe_config.PRO_PRICE_ID
     if not price_id:
-        raise HTTPException(400, "Invalid tier")
+        raise HTTPException(500, "Pro price not configured")
 
     if not business.stripe_customer_id:
         customer = stripe.Customer.create(
@@ -51,10 +48,10 @@ def create_checkout(
         line_items=[{"price": price_id, "quantity": 1}],
         metadata={
             "business_id": str(business.id),
-            "tier": selected_tier,
+            "tier": "pro",
         },
-        success_url=f"https://yourdomain.co.uk/{business.slug}/dashboard?billing=success",
-        cancel_url=f"https://yourdomain.co.uk/{business.slug}/dashboard?billing=cancel",
+        success_url=f"{settings.FRONTEND_URL}/{business.slug}/dashboard?billing=success",
+        cancel_url=f"{settings.FRONTEND_URL}/{business.slug}/dashboard?billing=cancel",
     )
 
     log_action(
@@ -62,7 +59,7 @@ def create_checkout(
         actor_type="business",
         actor_id=business.id,
         action="billing.checkout_started",
-        details=f"tier={selected_tier}",
+        details="tier=pro",
     )
 
     return {"checkout_url": session.url}
