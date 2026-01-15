@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from app.db.session import get_db
 from app.db.models import Booking, Enquiry, Business
-from app.schemas.booking import BookingFromEnquiryCreate, BookingOut
+from app.schemas.bookings import BookingFromEnquiryCreate, BookingOut, BookingNotesUpdate
 from app.api.deps import get_current_business, require_feature
 from app.services.email import (
     send_booking_confirmed_customer,
@@ -192,13 +192,10 @@ def create_booking_from_enquiry(
 @router.patch("/{booking_id}/notes")
 def update_booking_notes(
     booking_id: int,
-    payload: dict,
+    payload: BookingNotesUpdate,
     db: Session = Depends(get_db),
     business: Business = Depends(get_current_business),
 ):
-    if "notes" not in payload:
-        raise HTTPException(400, "Missing notes field")
-
     booking = (
         db.query(Booking)
         .filter(
@@ -211,7 +208,7 @@ def update_booking_notes(
     if not booking:
         raise HTTPException(404, "Booking not found")
 
-    booking.notes = payload["notes"]
+    booking.notes = payload.notes
     db.commit()
 
     return {"success": True}

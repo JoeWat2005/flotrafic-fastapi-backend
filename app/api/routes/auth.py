@@ -5,7 +5,6 @@ import stripe
 
 from app.db.session import get_db
 from app.db.models import Business
-from app.schemas.auth import PreRegisterRequest
 from app.core.security import hash_password, verify_password, create_access_token, verify_captcha, rate_limit
 from app.services.email import (
     send_verification_email,
@@ -15,6 +14,7 @@ from app.core.utils import slugify, generate_verification_code
 from app.api.deps import get_current_business_onboarding
 from app.core.config import settings, RESERVED_SLUGS, RATE_LIMITS
 from app.services.audit import log_action
+from app.schemas.auth import LoginRequest, PreRegisterRequest, ResetPasswordRequest, TokenResponse, VerifyEmailCodeRequest
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
@@ -33,24 +33,21 @@ AUTH ROUTES => AUTHENICATION
 """ 
 
 #business login
-@router.post("/login")
+@router.post("/login", response_model=TokenResponse)
 def login(
-    payload: dict,
+    payload: LoginRequest,
     request: Request,
     db: Session = Depends(get_db),
 ):
-    email = (payload.get("username") or "").lower().strip()
-    password = payload.get("password") or ""
+    email = payload.username.lower().strip()
+    password = payload.password
 
     ip = request.client.host if request.client else "unknown"
     key = f"auth:login:{ip}:{email}"
 
     limit, window = RATE_LIMITS["login"]
     if not rate_limit(key, limit, window):
-        raise HTTPException(
-            status_code=429,
-            detail="Too many login attempts. Try again shortly.",
-        )
+        raise HTTPException(status_code=429, detail="Too many login attempts")
 
     business = db.query(Business).filter(Business.email == email).first()
 
@@ -67,22 +64,15 @@ def login(
     if not business.email_verified:
         raise HTTPException(status_code=403, detail="Email not verified")
 
-    if business.password_reset_code:
-        business.password_reset_code = None
-        business.password_reset_expires = None
-
+    business.password_reset_code = None
+    business.password_reset_expires = None
     db.commit()
 
-    log_action(
-        db=db,
-        actor_type="business",
-        actor_id=business.id,
-        action="auth.login",
-    )
+    log_action(db=db, actor_type="business", actor_id=business.id, action="auth.login")
 
     token = create_access_token({"sub": str(business.id)})
+    return TokenResponse(access_token=token)
 
-    return {"access_token": token, "token_type": "bearer"}
 
 #business pre-register
 @router.post("/pre-register")
@@ -170,43 +160,31 @@ def pre_register(
 #verify email verification code
 @router.post("/verify-email-code")
 def verify_email_code(
-    payload: dict,
+    payload: VerifyEmailCodeRequest,
     request: Request,
     db: Session = Depends(get_db),
 ):
-    email = (payload.get("email") or "").lower().strip()
-    code = (payload.get("code") or "").strip()
+    email = payload.email.lower().strip()
+    code = payload.code.strip()
 
     ip = request.client.host if request.client else "unknown"
     key = f"auth:verify-email-code:{ip}:{email}"
 
     limit, window = RATE_LIMITS["verify_email"]
     if not rate_limit(key, limit, window):
-        raise HTTPException(
-            status_code=429,
-            detail="Too many verification attempts. Please wait.",
-        )
+        raise HTTPException(status_code=429, detail="Too many attempts")
 
-    captcha_token = payload.get("captcha_token")
-    verify_captcha(captcha_token)
+    verify_captcha(payload.captcha_token)
 
     business = db.query(Business).filter(Business.email == email).first()
     if not business:
         raise HTTPException(status_code=400, detail="Invalid verification code")
 
-    # Idempotent: already verified is not an error
     if business.email_verified:
         return {"status": "already_verified"}
 
     expires = business.email_verification_expires
-    if not expires:
-        raise HTTPException(status_code=400, detail="Invalid verification code")
-
-    # Defensive timezone normalisation
-    if expires.tzinfo is None:
-        expires = expires.replace(tzinfo=timezone.utc)
-
-    if expires < datetime.now(timezone.utc):
+    if not expires or expires < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Verification code expired")
 
     if business.email_verification_code != code:
@@ -217,7 +195,7 @@ def verify_email_code(
     business.email_verification_expires = None
 
     if business.tier == "free":
-        business.is_active == True
+        business.is_active = True   # 🔧 FIXED (was ==)
 
     db.commit()
 
@@ -292,9 +270,8 @@ def resend_verification(
 
 #request reset password
 @router.post("/request-password-reset")
-@router.post("/request-password-reset")
 def request_password_reset(
-    payload: dict,
+    payload: ResetPasswordRequest,
     db: Session = Depends(get_db),
 ):
     email = (payload.get("email") or "").lower().strip()
@@ -322,53 +299,33 @@ def request_password_reset(
 #reset password
 @router.post("/reset-password")
 def reset_password(
-    payload: dict,
+    payload: ResetPasswordRequest,
     request: Request,
     db: Session = Depends(get_db),
 ):
-    email = (payload.get("email") or "").lower().strip()
+    email = payload.email.lower().strip()
 
     ip = request.client.host if request.client else "unknown"
     key = f"auth:reset-password:{ip}:{email}"
 
     limit, window = RATE_LIMITS["reset_password"]
     if not rate_limit(key, limit, window):
-        raise HTTPException(
-            status_code=429,
-            detail="Too many attempts. Please try again later",
-        )
+        raise HTTPException(status_code=429, detail="Too many attempts")
 
-    code = (payload.get("code") or "").strip()
-    new_password = payload.get("new_password")
-    captcha_token = payload.get("captcha_token")
-
-    verify_captcha(captcha_token)
-
-    if not new_password:
-        raise HTTPException(status_code=400, detail="Invalid reset code")
+    verify_captcha(payload.captcha_token)
 
     business = db.query(Business).filter(Business.email == email).first()
     if not business:
         raise HTTPException(status_code=400, detail="Invalid reset code")
 
     expires = business.password_reset_expires
-    if not expires:
+    if not expires or expires < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Invalid or expired reset code")
 
-    if expires.tzinfo is None:
-        expires = expires.replace(tzinfo=timezone.utc)
-
-    if business.password_reset_code != code or datetime.now(timezone.utc) > expires:
-        log_action(
-            db=db,
-            actor_type="business",
-            actor_id=0,
-            action="auth.password_reset_failed",
-            details=f"email={email}",
-        )
+    if business.password_reset_code != payload.code:
         raise HTTPException(status_code=400, detail="Invalid or expired reset code")
 
-    business.hashed_password = hash_password(new_password)
+    business.hashed_password = hash_password(payload.new_password)
     business.password_reset_code = None
     business.password_reset_expires = None
     db.commit()

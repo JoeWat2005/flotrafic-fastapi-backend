@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field
+import re
 
 """
 API CONFIGURATION
@@ -95,3 +96,7 @@ RATE_LIMITS = {
 
 _PUBLIC_BUSINESS_CACHE = {}
 TIME_TO_LIVE = 60
+
+PASSWORD_REGEX = re.compile(
+    r"^(?=.*[0-9])(?=.*[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>\/?]).{8,}$"
+)
