@@ -1,17 +1,31 @@
 from time import time
 from datetime import datetime, timezone, timedelta
+from sib_api_v3_sdk.rest import ApiException
+from typing import Any
 import re, secrets, stripe
+import sib_api_v3_sdk
 
-from app.core.config import _PUBLIC_BUSINESS_CACHE, TIME_TO_LIVE
+from app.core.config import _PUBLIC_BUSINESS_CACHE, TIME_TO_LIVE, settings
 from app.db.models import Business
 
-#convert business name to URL safe slug
+if not settings.BREVO_API_KEY:
+    raise RuntimeError("BREVO_API_KEY is not set")
+
+config = sib_api_v3_sdk.Configuration()
+config.api_key["api-key"] = settings.BREVO_API_KEY
+
+client = sib_api_v3_sdk.ApiClient(config)
+brevo = sib_api_v3_sdk.TransactionalEmailsApi(client)
+
+
+#Convert business name to URL safe slug
 def slugify(name: str) -> str:
     slug = name.lower()
     slug = re.sub(r"[^a-z0-9]", "", slug)
     return slug
 
-#retrieve cached public business data if fresh
+
+#Retrieve cached public business data if fresh
 def get_cached_business(slug: str):
     entry = _PUBLIC_BUSINESS_CACHE.get(slug)
     if not entry:
@@ -24,24 +38,27 @@ def get_cached_business(slug: str):
 
     return value
 
-#store a public business data in cache with a timestamp
+
+#Store a public business data in cache with a timestamp
 def set_cached_business(slug: str, data: dict):
     _PUBLIC_BUSINESS_CACHE[slug] = (data, time())
 
-#generate a secure 6 digit recovery code and its expiry time
+
+#Generate a secure 6 digit recovery code and its expiry time
 def generate_verification_code(minutes_valid: int = 10) -> tuple[str, datetime]:
     code = f"{secrets.randbelow(1_000_000):06d}"
     expires = datetime.now(timezone.utc) + timedelta(minutes=minutes_valid)
     return code, expires
 
-#convert unix timestamp to timezone aware datetime
+
+#Convert unix timestamp to timezone aware datetime
 def _ts_to_dt(ts: int | None):
     if not ts:
         return None
     return datetime.fromtimestamp(ts, tz=timezone.utc)
 
 
-#safely fetch live subscription from stripe and update db model
+#Safely fetch live subscription from stripe and update db model
 def _safe_stripe_subscription_refresh(business: Business):
     if not business.stripe_subscription_id:
         return
@@ -55,3 +72,27 @@ def _safe_stripe_subscription_refresh(business: Business):
 
     except Exception:
         return
+    
+
+#Send a transactional email via Brevo using a predefined template
+def _send_email(*, to: str, template_id: int, params: dict[str, Any]) -> None:
+    try:
+        email = sib_api_v3_sdk.SendSmtpEmail(
+            to=[{"email": to}],
+            template_id=template_id,
+            params=params,
+        )
+        brevo.send_transac_email(email)
+
+    except ApiException as e:
+        raise RuntimeError(
+            f"Brevo email failed (template {template_id})"
+        ) from e
+    
+    
+#Format booking date and time consistently for email templates
+def _format_booking_time(start_time: datetime) -> tuple[str, str]:
+    return (
+        start_time.strftime("%A, %d %B %Y"),
+        start_time.strftime("%H:%M"),
+    )

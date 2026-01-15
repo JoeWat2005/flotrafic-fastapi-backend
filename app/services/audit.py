@@ -1,6 +1,8 @@
 from sqlalchemy.orm import Session
 from app.db.models import AuditLog
 
+
+#Persist a single audit log entry without interrupting the main request flow
 def log_action(
     db: Session,
     actor_type: str,
@@ -17,6 +19,7 @@ def log_action(
         )
         db.add(log)
         db.flush()
-        
+
     except Exception:
+        #Never allow audit logging failures to break application logic
         db.rollback()

@@ -2,11 +2,13 @@ from pydantic_settings import BaseSettings
 from pydantic import Field
 import re
 
+
 """
 API CONFIGURATION
 """
 
-#class to load and read backend .env
+
+#Class to load and read backend .env
 class Settings(BaseSettings):
 
     FRONTEND_URL: str = "http://localhost:5173"
@@ -32,7 +34,8 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-#acccount subscription tiers
+
+#Acccount subscription tiers
 TIERS = {
     "free": {
         "enquiries": True,
@@ -46,9 +49,12 @@ TIERS = {
     },
 }
 
-#slugs reserved for business logic 
+
+#Slugs reserved for business logic 
 RESERVED_SLUGS = {
-    #core infrastructure
+
+
+    #Core infrastructure
     "www",
     "api",
     "admin",
@@ -57,7 +63,8 @@ RESERVED_SLUGS = {
     "cdn",
     "files",
 
-    #backend route prefixes
+
+    #Backend route prefixes
     "auth",
     "billing",
     "bookings",
@@ -67,7 +74,8 @@ RESERVED_SLUGS = {
     "public",
     "stripe",
 
-    #frontend / platform routes
+
+    #Frontend / platform routes
     "dashboard",
     "login",
     "signup",
@@ -80,7 +88,8 @@ RESERVED_SLUGS = {
     "status",
 }
 
-#public route rate limits for public.py and auth
+
+#Public route rate limits for public.py and auth
 RATE_LIMITS = {
     "login": (5, 60),
     "pre_register": (3, 60),
@@ -93,6 +102,7 @@ RATE_LIMITS = {
     "booking": (5, 600),
     "visit": (30, 60),
 }
+
 
 _PUBLIC_BUSINESS_CACHE = {}
 TIME_TO_LIVE = 60

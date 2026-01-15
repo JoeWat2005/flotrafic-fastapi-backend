@@ -21,15 +21,18 @@ pwd_context = CryptContext(
     deprecated="auto",
 )
 
-#hash plaintext password
+
+#Hash plaintext password
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
-#check whether plaintext password matches a stored hash
+
+#Check whether plaintext password matches a stored hash
 def verify_password(password: str, hashed_password: str) -> bool:
     return pwd_context.verify(password, hashed_password)
 
-#create JWT access token
+
+#Create JWT access token
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(
@@ -43,7 +46,8 @@ def create_access_token(data: dict) -> str:
         algorithm=ALGORITHM,
     )
 
-#verify cloudflare turnstile CAPTCHA token
+
+#Verify cloudflare turnstile CAPTCHA token
 def verify_captcha(token: str):
     res = requests.post(
         "https://challenges.cloudflare.com/turnstile/v0/siteverify",
@@ -61,8 +65,9 @@ def verify_captcha(token: str):
             status_code=400,
             detail=f"Captcha verification failed: {data}",
         )
-    
-#simple in-memory rate limiter
+
+
+#Simple in-memory rate limiter
 def rate_limit(key: str, max_requests: int, window_seconds: int) -> bool:
     now = time()
     timestamps = _RATE_LIMIT_STORE.get(key, [])

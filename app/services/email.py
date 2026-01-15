@@ -1,49 +1,8 @@
-import sib_api_v3_sdk
-from sib_api_v3_sdk.rest import ApiException
 from datetime import datetime, timezone
-from typing import Any
-
-from app.core.config import settings
+from app.core.utils import _send_email, _format_booking_time
 
 
-# -------------------------------------------------------------------
-# Sanity checks
-# -------------------------------------------------------------------
-if not settings.BREVO_API_KEY:
-    raise RuntimeError("BREVO_API_KEY is not set")
-
-
-# -------------------------------------------------------------------
-# Brevo client setup
-# -------------------------------------------------------------------
-config = sib_api_v3_sdk.Configuration()
-config.api_key["api-key"] = settings.BREVO_API_KEY
-
-client = sib_api_v3_sdk.ApiClient(config)
-brevo = sib_api_v3_sdk.TransactionalEmailsApi(client)
-
-
-# -------------------------------------------------------------------
-# Internal helper (ONLY place that talks to Brevo)
-# -------------------------------------------------------------------
-def _send_email(*, to: str, template_id: int, params: dict[str, Any]) -> None:
-    try:
-        email = sib_api_v3_sdk.SendSmtpEmail(
-            to=[{"email": to}],
-            template_id=template_id,
-            params=params,
-        )
-        brevo.send_transac_email(email)
-
-    except ApiException as e:
-        raise RuntimeError(
-            f"Brevo email failed (template {template_id})"
-        ) from e
-
-
-# =========================================================
-# AUTH EMAILS
-# =========================================================
+#Send an email verification code during signup
 def send_verification_email(*, user_email: str, code: str) -> None:
     _send_email(
         to=user_email,
@@ -55,6 +14,7 @@ def send_verification_email(*, user_email: str, code: str) -> None:
     )
 
 
+#Send a password reset code after identity verification
 def send_password_reset_email(*, user_email: str, code: str) -> None:
     _send_email(
         to=user_email,
@@ -66,9 +26,7 @@ def send_password_reset_email(*, user_email: str, code: str) -> None:
     )
 
 
-# =========================================================
-# ENQUIRIES
-# =========================================================
+#Notify a business that a new customer enquiry has been received
 def send_enquiry_notification(
     *,
     business_email: str,
@@ -87,19 +45,7 @@ def send_enquiry_notification(
     )
 
 
-# =========================================================
-# BOOKINGS — STATE AWARE
-# =========================================================
-def _format_booking_time(start_time: datetime) -> tuple[str, str]:
-    return (
-        start_time.strftime("%A, %d %B %Y"),
-        start_time.strftime("%H:%M"),
-    )
-
-
-# ---------------------------------------------------------
-# Booking created → PENDING
-# ---------------------------------------------------------
+#Notify a customer that their booking request is pending confirmation
 def send_booking_pending_customer(
     *,
     customer_email: str,
@@ -119,6 +65,7 @@ def send_booking_pending_customer(
     )
 
 
+#Notify a business that a new booking request is awaiting action
 def send_booking_pending_business(
     *,
     business_email: str,
@@ -140,9 +87,7 @@ def send_booking_pending_business(
     )
 
 
-# ---------------------------------------------------------
-# Booking confirmed
-# ---------------------------------------------------------
+#Notify a customer that their booking has been confirmed
 def send_booking_confirmed_customer(
     *,
     customer_email: str,
@@ -164,9 +109,7 @@ def send_booking_confirmed_customer(
     )
 
 
-# ---------------------------------------------------------
-# Booking cancelled
-# ---------------------------------------------------------
+#Notify a customer that their booking has been cancelled
 def send_booking_cancelled_customer(
     *,
     customer_email: str,
@@ -186,9 +129,7 @@ def send_booking_cancelled_customer(
     )
 
 
-# =========================================================
-# SUBSCRIPTION / BILLING
-# =========================================================
+#Notify a business that their subscription has been activated
 def send_subscription_activated_email(
     *,
     business_email: str,
@@ -204,6 +145,7 @@ def send_subscription_activated_email(
     )
 
 
+#Notify a business that their subscription plan has changed
 def send_subscription_plan_changed_email(
     *,
     business_email: str,
@@ -221,6 +163,7 @@ def send_subscription_plan_changed_email(
     )
 
 
+#Notify a business that their subscription has been cancelled
 def send_subscription_cancelled_email(
     *,
     business_email: str,
@@ -234,6 +177,7 @@ def send_subscription_cancelled_email(
     )
 
 
+#Notify a business that their account has been paused due to payment issues
 def send_account_paused_email(
     *,
     business_email: str,
@@ -247,6 +191,7 @@ def send_account_paused_email(
     )
 
 
+#Notify a business about a payment issue and remaining grace period
 def send_payment_issue_email(
     *,
     business_email: str,
@@ -262,5 +207,3 @@ def send_payment_issue_email(
             "DATE": datetime.now(timezone.utc).strftime("%d %B %Y"),
         },
     )
-
-
