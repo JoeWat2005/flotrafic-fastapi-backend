@@ -17,18 +17,24 @@ router = APIRouter(
     dependencies=[Depends(get_current_admin)],
 )
 
+
 """
-BUSINESS ROUTES => REQUIRE ADMIN AUTH
+BUSINESS ROUTES => ADMIN MANAGEMENT
+
+Admin-only routes for viewing, modifying,
+activating, suspending, or deleting businesses.
 """
 
-#get businesses
+
+#List all registered businesses for administrative overview
 @router.get("/", response_model=List[BusinessOut])
 def list_businesses(
     db: Session = Depends(get_db),
 ):
     return db.query(Business).order_by(Business.id).all()
 
-#update business tier
+
+#Update a business subscription tier as an admin action
 @router.patch("/{business_id}/tier", response_model=BusinessOut)
 def update_business_tier(
     business_id: int,
@@ -53,7 +59,8 @@ def update_business_tier(
 
     return business
 
-#suspend business
+
+#Suspend a business and immediately disable access
 @router.patch("/{business_id}/suspend", response_model=BusinessOut)
 def suspend_business(
     business_id: int,
@@ -77,7 +84,8 @@ def suspend_business(
 
     return business
 
-#activate business
+
+#Reactivate a previously suspended business
 @router.patch("/{business_id}/activate", response_model=BusinessOut)
 def activate_business(
     business_id: int,
@@ -101,7 +109,8 @@ def activate_business(
 
     return business
 
-#delete business
+
+#Permanently delete a business and all associated data
 @router.delete("/{business_id}", response_model=dict)
 def delete_business(
     business_id: int,

@@ -1,9 +1,6 @@
-#instant booking confirmation toggle
-#change business name with cooldown
-#change email / reset password - complex
-#availability, opening hours, slot length, buffer minutes
-#timezone
-
 """
-TO COME IN FUTURE
+SETTINGS PLACEHOLDER
+
+Reserved for future business configuration such as
+availability, booking rules, timezones, and account preferences.
 """

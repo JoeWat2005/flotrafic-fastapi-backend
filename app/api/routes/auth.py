@@ -20,19 +20,16 @@ stripe.api_key = settings.STRIPE_SECRET_KEY
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+
 """
-AUTH ROUTES => AUTHENICATION
+AUTH ROUTES => BUSINESS AUTHENTICATION & ACCOUNT LIFECYCLE
 
-1) AUTH/LOGIN => RATE LIMIT OF 5 REQUESTS / IP / 1 MINUTE
-2) AUTH/PRE-REGISTER => RATE LIMIT OF 3 REQUESTS / IP / 1 MINUTE
-3) AUTH/VERIFY-EMAIL-CODE => RATE LIMIT OF 5 REQUESTS / IP / 1 MINUTE
-4) AUTH/START-CHECKOUT => NO RATE LIMIT, PROTECTED BY "get_current_business_onboarding"
-5) AUTH/RESEND-VERIFICATION => RATE LIMIT OF 2 REQUESTS / EMAIL / 1 MINUTE
-6) AUTH/REQUEST-PASSWORD-RESET => RATE LIMIT OF 2 REQUESTS / EMAIL / 1 MINUTE
-7) AUTH/RESET-PASSWORD => RATE LIMIT OF 5 REQUESTS / IP / 1 MINUTE
-""" 
+Handles login, pre-registration, email verification, Stripe checkout,
+password resets, and all rate-limited auth-related actions.
+"""
 
-#business login
+
+#Authenticate an existing business and return a JWT access token
 @router.post("/login", response_model=TokenResponse)
 def login(
     payload: LoginRequest,
@@ -74,7 +71,7 @@ def login(
     return TokenResponse(access_token=token)
 
 
-#business pre-register
+#Pre-register a new business and send an email verification code
 @router.post("/pre-register")
 def pre_register(
     payload: PreRegisterRequest,
@@ -98,7 +95,7 @@ def pre_register(
 
     existing = db.query(Business).filter(Business.email == email).first()
 
-    # Safe retry for unverified emails
+    #Safe retry for unverified emails
     if existing:
         if existing.email_verified:
             raise HTTPException(
@@ -118,7 +115,7 @@ def pre_register(
         send_verification_email(user_email=existing.email, code=code)
         return {"status": "code_resent"}
 
-    # New account creation
+    #New account creation
     slug = slugify(name)
 
     if not slug:
@@ -157,7 +154,8 @@ def pre_register(
     send_verification_email(user_email=business.email, code=code)
     return {"status": "code_sent"}
 
-#verify email verification code
+
+#Verify an email address using a one-time verification code
 @router.post("/verify-email-code")
 def verify_email_code(
     payload: VerifyEmailCodeRequest,
@@ -195,7 +193,7 @@ def verify_email_code(
     business.email_verification_expires = None
 
     if business.tier == "free":
-        business.is_active = True   # 🔧 FIXED (was ==)
+        business.is_active = True
 
     db.commit()
 
@@ -208,7 +206,8 @@ def verify_email_code(
 
     return {"status": "verified"}
 
-#launch stripe checkout
+
+#Start Stripe checkout flow for upgrading from free to pro
 @router.post("/start-checkout")
 def start_checkout(
     business: Business = Depends(get_current_business_onboarding),
@@ -237,7 +236,8 @@ def start_checkout(
 
     return {"checkout_url": session.url}
 
-#request resend verification
+
+#Resend email verification code
 @router.post("/resend-verification")
 def resend_verification(
     payload: dict,
@@ -268,7 +268,8 @@ def resend_verification(
     send_verification_email(user_email=business.email, code=code)
     return {"status": "ok"}
 
-#request reset password
+
+#Request a password reset email using a one-time code
 @router.post("/request-password-reset")
 def request_password_reset(
     payload: ResetPasswordRequest,
@@ -296,7 +297,8 @@ def request_password_reset(
     send_password_reset_email(user_email=business.email, code=code)
     return {"status": "ok"}
 
-#reset password
+
+#Reset account password after successful email + captcha verification
 @router.post("/reset-password")
 def reset_password(
     payload: ResetPasswordRequest,

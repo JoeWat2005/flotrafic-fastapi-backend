@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 """
 ADMIN AUTH SCHEMA
@@ -7,5 +7,5 @@ ADMIN AUTH SCHEMA
 
 #Payload used by admins to authenticate via the admin login endpoint
 class AdminLogin(BaseModel):
-    username: str
+    email: EmailStr
     password: str

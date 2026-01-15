@@ -3,41 +3,40 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db.models import Admin
-from app.core.security import verify_password
-from app.core.security import create_access_token, rate_limit   
+from app.core.security import verify_password, create_access_token, rate_limit
 from app.services.audit import log_action
 from app.schemas.admin_auth import AdminLogin
+from app.core.config import RATE_LIMITS
 
 router = APIRouter(prefix="/admin/auth", tags=["Admin Auth"])
 
 """
-ADMIN AUTH ROUTES => NO FEATURE GATING OR BUSINESS AUTH
+ADMIN AUTH ROUTES => ADMIN-ONLY AUTHENTICATION
 
-INSTEAD:
-
-1) ADMIN/AUTH/LOGIN => RATE LIMIT OF 5 ATTEMPTS / 10 MINUTES / IP
+Provides email + password login for administrators with strict
+IP-based rate limiting and full audit logging.
 """
 
-#admin login
+#Authenticate an admin via email and password and issue an admin-scoped JWT
 @router.post("/login")
 def admin_login(
     payload: AdminLogin,
     request: Request,
     db: Session = Depends(get_db),
 ):
-    # Rate limit: 5 attempts / 10 minutes / IP
-    ip = request.client.host if request.client else "unknown"
-    key = f"admin_login:{ip}"
-
-    if not rate_limit(key, max_requests=5, window_seconds=600):
-        raise HTTPException(status_code=429, detail="Too many login attempts")
-
-    username = payload.username.strip()
+    email = payload.email.strip().lower()
     password = payload.password
+
+    ip = request.client.host if request.client else "unknown"
+    key = f"admin_login:{ip}:{email}"
+
+    limit, window = RATE_LIMITS["login"]
+    if not rate_limit(key, limit, window):
+        raise HTTPException(status_code=429, detail="Too many login attempts")
 
     admin = (
         db.query(Admin)
-        .filter(Admin.username == username)
+        .filter(Admin.email == email)
         .first()
     )
 
@@ -47,7 +46,7 @@ def admin_login(
             actor_type="admin",
             actor_id=0,
             action="admin.login_failed",
-            details=f"username={username}",
+            details=f"email={email}",
         )
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -69,4 +68,3 @@ def admin_login(
         "access_token": token,
         "token_type": "bearer",
     }
-

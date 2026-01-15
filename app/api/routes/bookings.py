@@ -19,11 +19,16 @@ router = APIRouter(
     dependencies=[Depends(require_feature("bookings"))],
 )
 
+
 """
-BOOKING ROUTES => REQUIRE FEATURE "bookings" AND BUSINESS AUTH
+BOOKING ROUTES => APPOINTMENTS & SCHEDULING
+
+Manages bookings created manually, from enquiries,
+or via public booking requests.
 """
 
-#get bookings, by status or with sorting
+
+#Retrieve bookings with optional status filtering and sorting
 @router.get("/", response_model=List[BookingOut])
 def get_bookings(
     status: Optional[Literal["pending", "confirmed", "cancelled"]] = Query(None),
@@ -49,7 +54,8 @@ def get_bookings(
 
     return query.offset(offset).limit(limit).all()
 
-#confirm a booking
+
+#Confirm a pending booking and notify the customer
 @router.post("/{booking_id}/confirm")
 def confirm_booking(
     booking_id: int,
@@ -93,7 +99,8 @@ def confirm_booking(
 
     return {"success": True}
 
-#delete a booking
+
+#Cancel an existing booking and notify the customer if applicable
 @router.delete("/{booking_id}")
 def cancel_booking(
     booking_id: int,
@@ -134,7 +141,8 @@ def cancel_booking(
 
     return {"success": True}
 
-#create booking from an enquiry
+
+#Create and immediately confirm a booking from an enquiry
 @router.post("/from-enquiry/{enquiry_id}")
 def create_booking_from_enquiry(
     enquiry_id: int,
@@ -188,7 +196,8 @@ def create_booking_from_enquiry(
 
     return {"success": True, "booking_id": booking.id}
 
-#add note to a booking
+
+#Update internal notes attached to a booking
 @router.patch("/{booking_id}/notes")
 def update_booking_notes(
     booking_id: int,

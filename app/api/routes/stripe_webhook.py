@@ -14,16 +14,21 @@ from app.services.email import (
 )
 from app.core.config import settings
 
-router = APIRouter(prefix="/stripe", tags=["Stripe"])
-
-"""
-STRIPE WEBHOOK ROUTES => AUTHENICATION HANDLED BY STRIPE
-""" 
-
 stripe.api_key = settings.STRIPE_SECRET_KEY
 WEBHOOK_SECRET = settings.STRIPE_WEBHOOK_SECRET
 
-#webhook listening route
+router = APIRouter(prefix="/stripe", tags=["Stripe"])
+
+
+"""
+STRIPE WEBHOOK ROUTES => BILLING EVENT HANDLERS
+
+Receives and processes Stripe webhook events
+to keep subscription state in sync.
+"""
+
+
+#Receive and validate incoming Stripe webhook events
 @router.post("/webhook")
 async def stripe_webhook(request: Request):
     payload = await request.body()
@@ -57,7 +62,7 @@ async def stripe_webhook(request: Request):
             return {"status": "ok", "handled": True, "duplicate": True}
 
 
-        #checkout completed event received
+        #Handle successful checkout completion and subscription activation
         if event_type == "checkout.session.completed":
             metadata = obj.get("metadata") or {}
             business_id = metadata.get("business_id")
@@ -92,7 +97,6 @@ async def stripe_webhook(request: Request):
 
                 handled = True
 
-        #invoice paid event received
         elif event_type == "invoice.paid":
             sub_id = obj.get("subscription")
 
@@ -109,7 +113,7 @@ async def stripe_webhook(request: Request):
                 business.is_active = True
                 handled = True
 
-        #subscripition updated event received
+        #Handle subscription updates including tier changes
         elif event_type == "customer.subscription.updated":
             sub_id = obj.get("id")
 
@@ -128,7 +132,6 @@ async def stripe_webhook(request: Request):
                     obj.get("current_period_end")
                 )
 
-                # Determine new tier
                 if status in ("active", "trialing"):
                     new_tier = "pro"
                     business.is_active = True
@@ -146,7 +149,6 @@ async def stripe_webhook(request: Request):
                     details=f"{old_tier}->{new_tier}",
                 )
 
-                # ✅ Only email if tier actually changed
                 if old_tier != new_tier:
                     send_subscription_plan_changed_email(
                         business_email=business.email,
@@ -156,7 +158,8 @@ async def stripe_webhook(request: Request):
 
                 handled = True
 
-        #subscription cancelled event received
+
+        #Handle subscription cancellation events
         elif event_type == "customer.subscription.deleted":
             sub_id = obj.get("id")
 
@@ -185,7 +188,7 @@ async def stripe_webhook(request: Request):
                 handled = True
 
 
-        #payment failed event received
+        #Handle failed payments and pause affected accounts
         elif event_type == "invoice.payment_failed":
             sub_id = obj.get("subscription")
             cust_id = obj.get("customer")

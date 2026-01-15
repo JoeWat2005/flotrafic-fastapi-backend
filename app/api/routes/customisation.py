@@ -15,11 +15,16 @@ router = APIRouter(
     dependencies=[Depends(require_feature("customisation"))],
 )
 
+
 """
-CUSTOMISATION ROUTES => REQUIRE FEATURE "customisation" AND BUSINESS AUTH
+CUSTOMISATION ROUTES => WEBSITE APPEARANCE & CONTENT
+
+Allows businesses to configure branding, layout,
+and content for their public-facing website.
 """
 
 
+#Retrieve or lazily create website customisation for the business
 @router.get("/", response_model=CustomisationOut)
 def get_customisation(
     db: Session = Depends(get_db),
@@ -36,6 +41,7 @@ def get_customisation(
     return cust
 
 
+#Partially update website customisation settings via PATCH
 @router.patch("/", response_model=CustomisationOut)
 def update_customisation(
     payload: CustomisationUpdate,
@@ -70,6 +76,7 @@ def update_customisation(
     return cust
 
 
+#Upload and replace the business logo image
 @router.post("/logo")
 def upload_logo(
     file: UploadFile = File(...),

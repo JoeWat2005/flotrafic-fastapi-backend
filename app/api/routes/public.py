@@ -1,32 +1,39 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.db.models import Business, Enquiry, Visit, Booking
 from app.db.session import get_db
 from app.core.config import RESERVED_SLUGS, RATE_LIMITS
-from backend.api.app.schemas.enquirys import EnquiryCreate
-from app.services.email import send_enquiry_notification, send_booking_pending_business, send_booking_pending_customer
+from app.schemas.public import (
+    PublicBusinessOut,
+    PublicEnquiryCreate,
+    PublicVisitCreate,
+    PublicBookingCreate,
+    PublicSuccessOut,
+)
+from app.services.email import (
+    send_enquiry_notification,
+    send_booking_pending_business,
+    send_booking_pending_customer,
+)
 from app.services.audit import log_action
 from app.core.security import rate_limit, make_key
 from app.core.utils import get_cached_business, set_cached_business
+
 router = APIRouter(
     prefix="/public",
     tags=["Public"],
 )
-"""
-PUBLIC ROUTES => NO FEATURE GATING OR BUSINESS AUTH
-
-INSTEAD:
-
-1) PUBLIC/BUSINESS => USES CACHING
-2) PUBLIC/ENQUIRY => RATE LIMIT OF 5 REQUESTS / IP / BUSINESS / 10 MINUTES
-3) PUBLIC/BOOKING => RATE LIMIT OF 5 REQUESTS / IP / BUSINESS / 10 MINUTES
-4) PUBLIC/VISIT => RATE LIMIT OF 30 REQUESTS / IP / BUSINESS / 1 MINUTE (OVER THIS IGNORED)
 
 """
+PUBLIC ROUTES => ANONYMOUS WEBSITE INTERACTIONS
 
-#get public business info
-@router.get("/business")
+Public endpoints used by customer-facing websites
+for rendering, enquiries, bookings, and analytics.
+"""
+
+#Return cached public website data for a business
+@router.get("/business", response_model=PublicBusinessOut)
 def get_public_business(
     slug: str,
     db: Session = Depends(get_db),
@@ -40,11 +47,14 @@ def get_public_business(
 
     business = (
         db.query(Business)
-        .filter(Business.slug == slug)
+        .filter(
+            Business.slug == slug,
+            Business.is_active.is_(True),
+        )
         .first()
     )
 
-    if not business or not business.is_active:
+    if not business:
         raise HTTPException(status_code=404, detail="Business not found")
 
     cust = business.customisation
@@ -91,22 +101,21 @@ def get_public_business(
                 "hero", "about", "testimonials", "pricing", "contact"
             ],
             "animation_enabled": cust.animation_enabled if cust else True,
-        }
+        },
     }
 
     set_cached_business(slug, response_data)
-
     return response_data
 
-#public customer enquiry creation
-@router.post("/enquiry")
+
+#Create a customer enquiry with rate limiting applied
+@router.post("/enquiry", response_model=PublicSuccessOut)
 def create_public_enquiry(
     slug: str,
-    payload: EnquiryCreate,
+    payload: PublicEnquiryCreate,
     request: Request,
     db: Session = Depends(get_db),
 ):
-    
     limit, window = RATE_LIMITS["enquiry"]
     key = make_key(slug, request, "enquiry")
 
@@ -115,18 +124,17 @@ def create_public_enquiry(
 
     business = (
         db.query(Business)
-        .filter(Business.slug == slug)
+        .filter(
+            Business.slug == slug,
+            Business.is_active.is_(True),
+        )
         .first()
     )
 
-    if not business or not business.is_active:
+    if not business:
         raise HTTPException(status_code=404, detail="Business not found")
 
-    enquiries_enabled = True
-    if business.customisation:
-        enquiries_enabled = business.customisation.show_enquiry_form
-
-    if not enquiries_enabled:
+    if business.customisation and not business.customisation.show_enquiry_form:
         raise HTTPException(status_code=400, detail="Enquiries are disabled")
 
     enquiry = Enquiry(
@@ -160,46 +168,49 @@ def create_public_enquiry(
 
     return {"success": True}
 
-#track website visits
-@router.post("/visit")
+
+#Track anonymous website visits for analytics purposes
+@router.post("/visit", response_model=PublicSuccessOut)
 def track_visit(
-    payload: dict = Body(...),
-    request: Request = None,
+    payload: PublicVisitCreate,
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    slug = payload.get("slug")
-    if not slug:
-        return {"success": False}
-
     limit, window = RATE_LIMITS["visit"]
-    key = make_key(slug, request, "visit")
+    key = make_key(payload.slug, request, "visit")
 
     if not rate_limit(key, limit, window):
         return {"success": True}
 
-    business = db.query(Business).filter(Business.slug == slug).first()
+    business = (
+        db.query(Business)
+        .filter(Business.slug == payload.slug)
+        .first()
+    )
+
     if not business:
         return {"success": False}
 
     visit = Visit(
         business_id=business.id,
-        path=payload.get("path", "/"),
-        user_agent=payload.get("user_agent"),
+        path=payload.path or "/",
+        user_agent=payload.user_agent,
     )
+
     db.add(visit)
     db.commit()
 
     return {"success": True}
 
-#public customer booking creation
-@router.post("/booking")
+
+#Create a public booking request with conflict detection
+@router.post("/booking", response_model=PublicSuccessOut)
 def create_public_booking(
     slug: str,
     payload: PublicBookingCreate,
     request: Request,
     db: Session = Depends(get_db),
 ):
-    
     limit, window = RATE_LIMITS["booking"]
     key = make_key(slug, request, "booking")
 
@@ -208,7 +219,10 @@ def create_public_booking(
 
     business = (
         db.query(Business)
-        .filter(Business.slug == slug, Business.is_active == True)
+        .filter(
+            Business.slug == slug,
+            Business.is_active.is_(True),
+        )
         .first()
     )
 

@@ -13,18 +13,24 @@ router = APIRouter(
     dependencies=[Depends(get_current_business)],
 )
 
+
 """
-ME ROUTES => REQUIRE BUSINESS AUTH
+ME ROUTES => CURRENT BUSINESS ACCOUNT
+
+Returns profile and billing information
+for the authenticated business account.
 """
 
-#get business info
+
+#Return basic profile information for the current business
 @router.get("/", response_model=MeOut)
 def get_me(
     business: Business = Depends(get_current_business),
 ):
     return business
 
-#get business billing info
+
+#Return billing and subscription details for the current business
 @router.get("/billing", response_model=BillingOut)
 def get_billing(
     business: Business = Depends(get_current_business),
@@ -38,7 +44,8 @@ def get_billing(
         "stripe_subscription_id": business.stripe_subscription_id,
     }
 
-#update business name
+
+#Update the display name of the business account
 @router.patch("/", response_model=MeOut)
 def update_me(
     payload: UpdateMe,

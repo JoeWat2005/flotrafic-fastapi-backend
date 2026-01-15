@@ -14,11 +14,15 @@ router = APIRouter(
     dependencies=[Depends(require_feature("enquiries"))],
 )
 
+
 """
-ENQUIRIES ROUTES => REQUIRE FEATURE "enquiries" AND BUSINESS AUTH
+ENQUIRY ROUTES => CUSTOMER MESSAGES & LEADS
+
+Handles incoming customer enquiries,
+status updates, and enquiry analytics.
 """
 
-
+#Retrieve enquiries with filtering, sorting, and pagination
 @router.get("/", response_model=List[EnquiryOut])
 def get_enquiries(
     is_read: Optional[bool] = Query(None),
@@ -55,6 +59,7 @@ def get_enquiries(
     return query.offset(offset).limit(limit).all()
 
 
+#Mark an enquiry as read without modifying its status
 @router.patch("/{enquiry_id}/read")
 def mark_enquiry_read(
     enquiry_id: int,
@@ -87,6 +92,7 @@ def mark_enquiry_read(
     return {"success": True}
 
 
+#Update the workflow status of an enquiry
 @router.patch("/{enquiry_id}/status")
 def update_enquiry_status(
     enquiry_id: int,
@@ -120,6 +126,7 @@ def update_enquiry_status(
     return {"success": True}
 
 
+#Delete an enquiry if it has no associated booking
 @router.delete("/{enquiry_id}")
 def delete_enquiry(
     enquiry_id: int,
@@ -158,6 +165,7 @@ def delete_enquiry(
     return {"success": True}
 
 
+#Return enquiry and visit statistics for dashboard insights
 @router.get("/stats")
 def enquiry_stats(
     db: Session = Depends(get_db),

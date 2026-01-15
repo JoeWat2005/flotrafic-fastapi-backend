@@ -16,11 +16,16 @@ router = APIRouter(
     dependencies=[Depends(get_current_business)],
 )
 
+
 """
-BILLING ROUTES => REQUIRE BUSINESS AUTH
+BILLING ROUTES => STRIPE SUBSCRIPTIONS & CUSTOMER PORTAL
+
+Allows businesses to start checkout, view billing status,
+and manage subscriptions via Stripe’s billing portal.
 """
 
-#launch stripe checkout
+
+#Create a Stripe checkout session for upgrading to the pro plan
 @router.post("/checkout")
 def create_checkout(
     business: Business = Depends(get_current_business),
@@ -64,7 +69,8 @@ def create_checkout(
 
     return {"checkout_url": session.url}
 
-#get billing overview
+
+#Return current billing and subscription status for the business
 @router.get("/overview")
 def billing_overview(
     business: Business = Depends(get_current_business),
@@ -80,7 +86,8 @@ def billing_overview(
         "is_active": business.is_active,
     }
 
-#launch stripe portal
+
+#Launch the Stripe customer billing portal for subscription management
 @router.post("/portal")
 def billing_portal(
     business: Business = Depends(get_current_business),
