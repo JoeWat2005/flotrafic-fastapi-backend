@@ -16,10 +16,10 @@ router = APIRouter(
 )
 
 """
-CUSTOMISATION ROUTES => REQUIRE FEATURE "customisation" AND BUSINES AUTH
+CUSTOMISATION ROUTES => REQUIRE FEATURE "customisation" AND BUSINESS AUTH
 """
 
-#get customisation
+
 @router.get("/", response_model=CustomisationOut)
 def get_customisation(
     db: Session = Depends(get_db),
@@ -35,7 +35,7 @@ def get_customisation(
 
     return cust
 
-#update customisation
+
 @router.patch("/", response_model=CustomisationOut)
 def update_customisation(
     payload: CustomisationUpdate,
@@ -49,6 +49,7 @@ def update_customisation(
 
     update_data = payload.model_dump(exclude_unset=True)
 
+    # Prevent logo mutation via PATCH
     update_data.pop("logo_path", None)
     update_data.pop("logo_url", None)
 
@@ -68,7 +69,7 @@ def update_customisation(
 
     return cust
 
-#upload logo
+
 @router.post("/logo")
 def upload_logo(
     file: UploadFile = File(...),
@@ -82,7 +83,7 @@ def upload_logo(
     }
 
     if file.content_type not in content_type_to_ext:
-        raise HTTPException(400, "Unsupported image type")
+        raise HTTPException(status_code=400, detail="Unsupported image type")
 
     cust = business.customisation
     if not cust:
@@ -103,7 +104,6 @@ def upload_logo(
     os.makedirs(upload_dir, exist_ok=True)
 
     path = os.path.join(upload_dir, filename)
-
     with open(path, "wb") as f:
         f.write(file.file.read())
 

@@ -2,6 +2,10 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
 
+"""
+BOOKINGS ROUTE SCHEMA
+"""
+
 #booking from enquiry
 class BookingFromEnquiryCreate(BaseModel):
     start_time: datetime
