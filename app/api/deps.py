@@ -9,10 +9,12 @@ from app.db.models import Business, Admin
 from app.core.security import SECRET_KEY, ALGORITHM
 from app.core.config import TIERS
 
-#do not auto error
+
+#HTTP bearer scheme used for JWT-based authentication
 bearer_scheme = HTTPBearer(auto_error=False)
 
-#decode jwt token
+
+#Decode and validate a JWT access token
 def decode_token(token: str) -> dict:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -27,7 +29,8 @@ def decode_token(token: str) -> dict:
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-#enforce strict business auth
+
+#Resolve the currently authenticated business with full access checks
 def get_current_business(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
@@ -57,7 +60,8 @@ def get_current_business(
 
     return business
 
-#enforce strict onboarding business auth
+
+#Resolve an authenticated business during onboarding before full activation
 def get_current_business_onboarding(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
@@ -84,7 +88,8 @@ def get_current_business_onboarding(
 
     return business
 
-#enforce strict admin auth
+
+#Resolve the currently authenticated administrator
 def get_current_admin(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
@@ -108,15 +113,14 @@ def get_current_admin(
 
     return admin
 
-#enforce strict feature auth / payment auth
+
+#Enforce feature availability and subscription validity for a business
 def require_feature(feature: str):
     def _check(business: Business = Depends(get_current_business)):
 
-        #check if feature is available
         if not TIERS.get(business.tier, {}).get(feature):
             raise HTTPException(status_code=403, detail="Upgrade required")
 
-        #check business is paying
         if business.tier != "free":
             if business.stripe_subscription_status not in ("active", "trialing"):
                 raise HTTPException(status_code=402, detail="Payment required")
