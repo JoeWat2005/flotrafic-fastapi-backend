@@ -2,27 +2,27 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import os
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///./dev.db"
-)
+from app.core.config import settings
 
-# SQLite needs special flags for FastAPI
+db_url = settings.DATABASE_URL
+
+#create db engine
 engine = create_engine(
-    DATABASE_URL,
+    db_url,
     connect_args={"check_same_thread": False},
 )
 
+#db connection manager
 SessionLocal = sessionmaker(
     bind=engine,
     autocommit=False,
     autoflush=False,
 )
 
+#access database
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-

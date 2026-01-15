@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
 from sqlalchemy.orm import Session
 import stripe
-from datetime import datetime, timezone
 
 from app.core.utils import _ts_to_dt, _safe_stripe_subscription_refresh
 from app.db.session import SessionLocal
@@ -123,27 +122,37 @@ async def stripe_webhook(request: Request):
             if business:
                 old_tier = business.tier
 
-                # Any active subscription = Pro
                 status = obj.get("status")
                 business.stripe_subscription_status = status
                 business.stripe_current_period_end = _ts_to_dt(
                     obj.get("current_period_end")
                 )
 
+                # Determine new tier
                 if status in ("active", "trialing"):
-                    business.tier = "pro"
+                    new_tier = "pro"
                     business.is_active = True
                 else:
-                    business.tier = "free"
+                    new_tier = "free"
                     business.is_active = False
+
+                business.tier = new_tier
 
                 log_action(
                     db=db,
                     actor_type="system",
                     actor_id=business.id,
                     action="billing.tier_updated",
-                    details=f"{old_tier}->{business.tier}",
+                    details=f"{old_tier}->{new_tier}",
                 )
+
+                # ✅ Only email if tier actually changed
+                if old_tier != new_tier:
+                    send_subscription_plan_changed_email(
+                        business_email=business.email,
+                        old_tier=old_tier,
+                        new_tier=new_tier,
+                    )
 
                 handled = True
 

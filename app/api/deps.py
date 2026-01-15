@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from app.db.session import get_db
 from app.db.models import Business, Admin
 from app.core.security import SECRET_KEY, ALGORITHM
-from app.core.stripe import TIERS
+from app.core.config import TIERS
 
 #do not auto error
 bearer_scheme = HTTPBearer(auto_error=False)

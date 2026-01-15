@@ -7,6 +7,10 @@ from time import time
 
 from app.core.config import settings
 
+"""
+API SECURITY
+"""
+
 SECRET_KEY = settings.JWT_SECRET_KEY
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
@@ -17,12 +21,15 @@ pwd_context = CryptContext(
     deprecated="auto",
 )
 
+#hash plaintext password
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
+#check whether plaintext password matches a stored hash
 def verify_password(password: str, hashed_password: str) -> bool:
     return pwd_context.verify(password, hashed_password)
 
+#create JWT access token
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(
@@ -36,6 +43,7 @@ def create_access_token(data: dict) -> str:
         algorithm=ALGORITHM,
     )
 
+#verify cloudflare turnstile CAPTCHA token
 def verify_captcha(token: str):
     res = requests.post(
         "https://challenges.cloudflare.com/turnstile/v0/siteverify",
@@ -48,15 +56,13 @@ def verify_captcha(token: str):
 
     data = res.json()
 
-    # 🔍 DEBUG (TEMPORARY)
-    print("Turnstile verification response:", data)
-
     if not data.get("success"):
         raise HTTPException(
             status_code=400,
             detail=f"Captcha verification failed: {data}",
         )
     
+#simple in-memory rate limiter
 def rate_limit(key: str, max_requests: int, window_seconds: int) -> bool:
     now = time()
     timestamps = _RATE_LIMIT_STORE.get(key, [])
@@ -70,7 +76,3 @@ def rate_limit(key: str, max_requests: int, window_seconds: int) -> bool:
     timestamps.append(now)
     _RATE_LIMIT_STORE[key] = timestamps
     return True
-
-def make_key(slug: str, request, endpoint: str) -> str:
-    ip = request.client.host if request.client else "unknown"
-    return f"{slug}:{endpoint}:{ip}"

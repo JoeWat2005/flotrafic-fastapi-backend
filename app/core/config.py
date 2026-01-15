@@ -1,34 +1,28 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
+"""
+API CONFIGURATION
+"""
 
+#class to load and read backend .env
 class Settings(BaseSettings):
-    # ------------------------------------------------------------------
-    # App
-    # ------------------------------------------------------------------
+
     FRONTEND_URL: str = "http://localhost:5173"
-    # ------------------------------------------------------------------
-    # JWT
-    # ------------------------------------------------------------------
+    
     JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
 
-    # ------------------------------------------------------------------
-    # Email (Brevo)
-    # ------------------------------------------------------------------
     BREVO_API_KEY: str | None = None
 
-    # ------------------------------------------------------------------
-    # Stripe
-    # ------------------------------------------------------------------
     STRIPE_SECRET_KEY: str
     STRIPE_WEBHOOK_SECRET: str
-    
     STRIPE_PRO_PRICE_ID: str
 
-    # ------------------------------------------------------------------
-    # Cloudflare Turnstile
-    # ------------------------------------------------------------------
     TURNSTILE_SECRET_KEY: str
+
+    ADMIN_PASSWORD: str
+
+    DATABASE_URL: str | None = None
 
     class Config:
         env_file = ".env"
@@ -37,8 +31,23 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+#acccount subscription tiers
+TIERS = {
+    "free": {
+        "enquiries": True,
+        "bookings": True,
+        "autopilot": False,
+    },
+    "pro": {
+        "enquiries": True,
+        "bookings": True,
+        "autopilot": True,
+    },
+}
+
+#slugs reserved for business logic 
 RESERVED_SLUGS = {
-    # Core infrastructure
+    #core infrastructure
     "www",
     "api",
     "admin",
@@ -47,7 +56,7 @@ RESERVED_SLUGS = {
     "cdn",
     "files",
 
-    # Backend route prefixes
+    #backend route prefixes
     "auth",
     "billing",
     "bookings",
@@ -57,7 +66,7 @@ RESERVED_SLUGS = {
     "public",
     "stripe",
 
-    # Frontend / platform routes
+    #frontend / platform routes
     "dashboard",
     "login",
     "signup",
@@ -70,6 +79,7 @@ RESERVED_SLUGS = {
     "status",
 }
 
+#public route rate limits for public.py and auth
 RATE_LIMITS = {
     "login": (5, 60),
     "pre_register": (3, 60),
@@ -82,3 +92,6 @@ RATE_LIMITS = {
     "booking": (5, 600),
     "visit": (30, 60),
 }
+
+_PUBLIC_BUSINESS_CACHE = {}
+TIME_TO_LIVE = 60
