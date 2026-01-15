@@ -5,7 +5,8 @@ from typing import Literal
 BUSINESS ROUTE SCHEMA
 """
 
-#business out
+
+#Public-facing representation of a business for admin dashboards
 class BusinessOut(BaseModel):
     id: int
     name: str
@@ -15,7 +16,8 @@ class BusinessOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
-#business tier
+
+#Payload used by admins to change a business subscription tier
 class BusinessTierUpdate(BaseModel):
     tier: Literal["free", "pro"]
 

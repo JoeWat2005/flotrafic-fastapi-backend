@@ -4,7 +4,7 @@ from typing import List, Optional, Literal
 
 from app.db.session import get_db
 from app.db.models import Enquiry, Business, Visit
-from app.schemas.enquiry import EnquiryOut
+from app.schemas.enquirys import EnquiryOut, EnquiryStatusUpdate
 from app.api.deps import get_current_business, require_feature
 from app.services.audit import log_action
 
@@ -18,7 +18,7 @@ router = APIRouter(
 ENQUIRIES ROUTES => REQUIRE FEATURE "enquiries" AND BUSINESS AUTH
 """
 
-#get enquiries, by read, status or with sorting
+
 @router.get("/", response_model=List[EnquiryOut])
 def get_enquiries(
     is_read: Optional[bool] = Query(None),
@@ -54,7 +54,7 @@ def get_enquiries(
 
     return query.offset(offset).limit(limit).all()
 
-#mark enquiry as read
+
 @router.patch("/{enquiry_id}/read")
 def mark_enquiry_read(
     enquiry_id: int,
@@ -86,11 +86,11 @@ def mark_enquiry_read(
 
     return {"success": True}
 
-#update enquiry status
+
 @router.patch("/{enquiry_id}/status")
 def update_enquiry_status(
     enquiry_id: int,
-    status: Literal["new", "in_progress", "resolved"] = Query(...),
+    payload: EnquiryStatusUpdate,
     db: Session = Depends(get_db),
     business: Business = Depends(get_current_business),
 ):
@@ -106,7 +106,7 @@ def update_enquiry_status(
     if not enquiry:
         raise HTTPException(404, "Enquiry not found")
 
-    enquiry.status = status
+    enquiry.status = payload.status
     db.commit()
 
     log_action(
@@ -114,12 +114,12 @@ def update_enquiry_status(
         actor_type="business",
         actor_id=business.id,
         action="enquiry.status_changed",
-        details=f"enquiry_id={enquiry.id},status={status}",
+        details=f"enquiry_id={enquiry.id},status={payload.status}",
     )
 
     return {"success": True}
 
-#delete enquiry
+
 @router.delete("/{enquiry_id}")
 def delete_enquiry(
     enquiry_id: int,
@@ -157,7 +157,7 @@ def delete_enquiry(
 
     return {"success": True}
 
-#enquiry statistics (move in future)
+
 @router.get("/stats")
 def enquiry_stats(
     db: Session = Depends(get_db),
@@ -165,24 +165,24 @@ def enquiry_stats(
 ):
     return {
         "total": db.query(Enquiry)
-            .filter(Enquiry.business_id == business.id)
-            .count(),
+        .filter(Enquiry.business_id == business.id)
+        .count(),
 
         "unread": db.query(Enquiry)
-            .filter(
-                Enquiry.business_id == business.id,
-                Enquiry.is_read.is_(False),
-            )
-            .count(),
+        .filter(
+            Enquiry.business_id == business.id,
+            Enquiry.is_read.is_(False),
+        )
+        .count(),
 
         "new": db.query(Enquiry)
-            .filter(
-                Enquiry.business_id == business.id,
-                Enquiry.status == "new",
-            )
-            .count(),
+        .filter(
+            Enquiry.business_id == business.id,
+            Enquiry.status == "new",
+        )
+        .count(),
 
         "visits": db.query(Visit)
-            .filter(Visit.business_id == business.id)
-            .count(),
+        .filter(Visit.business_id == business.id)
+        .count(),
     }

@@ -7,12 +7,14 @@ from app.core.config import PASSWORD_REGEX
 AUTH ROUTE SCHEMA
 """
 
-#token
+
+#Response returned after successful authentication containing the JWT
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
-#pre register
+
+#Payload used during initial pre-registration before email verification
 class PreRegisterRequest(BaseModel):
     name: str = Field(min_length=2, max_length=100)
     email: EmailStr
@@ -37,18 +39,21 @@ class PreRegisterRequest(BaseModel):
             raise ValueError("Passwords do not match")
         return v
 
-#login
+
+#Payload used by businesses to log in with email and password
 class LoginRequest(BaseModel):
     username: EmailStr
     password: str
 
-#verify
+
+#Payload used to verify an email address using a one-time code
 class VerifyEmailCodeRequest(BaseModel):
     email: EmailStr
     code: str
     captcha_token: str
 
-#reset password
+
+#Payload used to reset a password after email verification
 class ResetPasswordRequest(BaseModel):
     email: EmailStr
     code: str
@@ -64,4 +69,3 @@ class ResetPasswordRequest(BaseModel):
                 "a number and a symbol"
             )
         return v
-

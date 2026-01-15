@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_business
 from app.db.session import get_db
 from app.db.models import Business
-from app.schemas.me import UpdateMe
+from app.schemas.me import MeOut, BillingOut, UpdateMe
 from app.services.audit import log_action
 
 router = APIRouter(
@@ -14,25 +14,18 @@ router = APIRouter(
 )
 
 """
-ENQUIRIES ROUTES => REQUIRE BUSINESS AUTH
+ME ROUTES => REQUIRE BUSINESS AUTH
 """
 
-#get me info
-@router.get("/")
+#get business info
+@router.get("/", response_model=MeOut)
 def get_me(
     business: Business = Depends(get_current_business),
 ):
-    return {
-        "id": business.id,
-        "name": business.name,
-        "email": business.email,
-        "tier": business.tier,
-        "is_active": business.is_active,
-        "slug": business.slug,
-    }
+    return business
 
-#get billing info
-@router.get("/billing")
+#get business billing info
+@router.get("/billing", response_model=BillingOut)
 def get_billing(
     business: Business = Depends(get_current_business),
 ):
@@ -45,19 +38,14 @@ def get_billing(
         "stripe_subscription_id": business.stripe_subscription_id,
     }
 
-#update profile
-@router.patch("/")
+#update business name
+@router.patch("/", response_model=MeOut)
 def update_me(
     payload: UpdateMe,
     db: Session = Depends(get_db),
     business: Business = Depends(get_current_business),
 ):
-    name = payload.name.strip()
-
-    if not name:
-        raise HTTPException(400, "Name cannot be empty")
-
-    business.name = name
+    business.name = payload.name.strip()
     db.commit()
 
     log_action(
@@ -67,10 +55,4 @@ def update_me(
         action="account.name_updated",
     )
 
-    return {
-        "id": business.id,
-        "name": business.name,
-        "email": business.email,
-        "tier": business.tier,
-        "is_active": business.is_active,
-    }
+    return business

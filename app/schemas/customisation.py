@@ -5,30 +5,33 @@ from typing import Optional, List, Literal
 CUSTOMISATION ROUTE SCHEMA
 """
 
-#testimonial
+
+#Single customer testimonial displayed on the public website
 class Testimonial(BaseModel):
     name: str
     role: Optional[str] = None
     content: str
     rating: int = Field(default=5, ge=1, le=5)
 
-#pricing
+
+#Pricing plan definition displayed on the public website
 class PricingPlan(BaseModel):
     name: str
     price: str
     features: List[str] = Field(default_factory=list)
     is_popular: bool = False
 
-#base customisation
+
+#Base customisation model defining all configurable website settings
 class CustomisationBase(BaseModel):
-    
-    #branding
+
+    #Brand colour and typography configuration
     primary_color: Optional[str] = "#0f172a"
     secondary_color: Optional[str] = "#334155"
     accent_color: Optional[str] = "#38bdf8"
     font_family: Optional[str] = "Inter"
 
-    #hero /content
+    #Hero, about, and contact content displayed on the site
     hero_title: Optional[str] = "Professional services you can trust"
     hero_subtitle: Optional[str] = "Get in touch today for a fast response"
     cta_text: Optional[str] = "Request a quote"
@@ -38,27 +41,27 @@ class CustomisationBase(BaseModel):
     contact_phone: Optional[str] = None
     contact_address: Optional[str] = None
 
-    #social media links
+    #Optional social media profile links
     social_facebook: Optional[HttpUrl] = None
     social_twitter: Optional[HttpUrl] = None
     social_instagram: Optional[HttpUrl] = None
     social_linkedin: Optional[HttpUrl] = None
 
-    #feature toggles
+    #Feature toggles controlling visible sections
     show_enquiry_form: bool = True
     show_testimonials: bool = False
     show_pricing: bool = False
 
-    #feature lists
+    #Dynamic content lists rendered on the site
     testimonials: List[Testimonial] = Field(default_factory=list)
     pricing_plans: List[PricingPlan] = Field(default_factory=list)
 
-    #styling
+    #UI styling configuration
     border_radius: Literal["none", "small", "medium", "large"] = "medium"
     text_alignment: Literal["left", "center", "right"] = "center"
     button_style: Literal["solid", "outline", "ghost"] = "solid"
 
-    #default section order
+    #Ordered list of sections to render on the page
     section_order: List[str] = Field(
         default_factory=lambda: [
             "hero",
@@ -70,13 +73,14 @@ class CustomisationBase(BaseModel):
         ]
     )
 
-    #animation toggle
+    #Global animation enable/disable toggle
     animation_enabled: bool = True
 
-    #custom css
+    #Optional custom CSS injected into the public site
     custom_css: Optional[str] = None
 
-#customisation update
+
+#Payload used to partially update customisation settings via PATCH
 class CustomisationUpdate(BaseModel):
     primary_color: Optional[str] = None
     secondary_color: Optional[str] = None
@@ -115,10 +119,10 @@ class CustomisationUpdate(BaseModel):
     custom_css: Optional[str] = None
 
 
+#Full customisation object returned to authenticated businesses
 class CustomisationOut(CustomisationBase):
     id: int
     business_id: int
     logo_path: Optional[str] = None
 
     model_config = {"from_attributes": True}
-

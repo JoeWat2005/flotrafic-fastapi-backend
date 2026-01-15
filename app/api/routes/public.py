@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.models import Business, Enquiry, Visit, Booking
 from app.db.session import get_db
 from app.core.config import RESERVED_SLUGS, RATE_LIMITS
-from app.schemas.enquiry import EnquiryCreate
+from backend.api.app.schemas.enquirys import EnquiryCreate
 from app.services.email import send_enquiry_notification, send_booking_pending_business, send_booking_pending_customer
 from app.services.audit import log_action
 from app.core.security import rate_limit, make_key
