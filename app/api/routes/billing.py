@@ -6,9 +6,9 @@ from datetime import timezone
 from app.db.session import get_db
 from app.db.models import Business
 from app.api.deps import get_current_business
-from app.core import stripe as stripe_config
 from app.services.audit import log_action
 from app.core.config import settings
+from app.core.utils import _safe_stripe_subscription_refresh
 
 router = APIRouter(
     prefix="/billing",
@@ -34,7 +34,7 @@ def create_checkout(
     if business.tier == "pro":
         raise HTTPException(400, "Already on Pro")
 
-    price_id = stripe_config.PRO_PRICE_ID
+    price_id = settings.STRIPE_PRO_PRICE_ID
     if not price_id:
         raise HTTPException(500, "Pro price not configured")
 

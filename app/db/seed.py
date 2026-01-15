@@ -10,7 +10,7 @@ def seed_admin(db: Session):
         return
 
     admin = Admin(
-        username="admin",
+        email="admin@test.com",
         hashed_password=settings.ADMIN_PASSWORD,
     )
 

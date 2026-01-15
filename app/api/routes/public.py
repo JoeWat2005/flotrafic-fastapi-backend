@@ -17,7 +17,7 @@ from app.services.email import (
     send_booking_pending_customer,
 )
 from app.services.audit import log_action
-from app.core.security import rate_limit, make_key
+from app.core.security import rate_limit
 from app.core.utils import get_cached_business, set_cached_business
 
 router = APIRouter(
@@ -116,9 +116,11 @@ def create_public_enquiry(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    limit, window = RATE_LIMITS["enquiry"]
-    key = make_key(slug, request, "enquiry")
 
+    ip = request.client.host if request.client else "unknown"
+    key = f"public:enquiry:{ip}:{slug}"
+
+    limit, window = RATE_LIMITS["enquiry"]
     if not rate_limit(key, limit, window):
         raise HTTPException(status_code=429, detail="Too many enquiries")
 
@@ -176,20 +178,24 @@ def track_visit(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    limit, window = RATE_LIMITS["visit"]
-    key = make_key(payload.slug, request, "visit")
+    ip = request.client.host if request.client else "unknown"
+    key = f"public:visit:{ip}"
 
+    limit, window = RATE_LIMITS["visit"]
     if not rate_limit(key, limit, window):
         return {"success": True}
 
     business = (
         db.query(Business)
-        .filter(Business.slug == payload.slug)
+        .filter(
+            Business.id == payload.business_id,
+            Business.is_active.is_(True),
+        )
         .first()
     )
 
     if not business:
-        return {"success": False}
+        return {"success": True}
 
     visit = Visit(
         business_id=business.id,
@@ -211,9 +217,10 @@ def create_public_booking(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    limit, window = RATE_LIMITS["booking"]
-    key = make_key(slug, request, "booking")
+    ip = request.client.host if request.client else "unknown"
+    key = f"public:booking:{ip}:{slug}"
 
+    limit, window = RATE_LIMITS["enquiry"]
     if not rate_limit(key, limit, window):
         raise HTTPException(status_code=429, detail="Too many booking attempts")
 
