@@ -6,7 +6,6 @@ from app.db.session import get_db
 from app.core.config import RESERVED_SLUGS, RATE_LIMITS
 from app.schemas.enquiry import EnquiryCreate
 from app.services.email import send_enquiry_notification, send_booking_pending_business, send_booking_pending_customer
-from app.schemas.booking import PublicBookingCreate
 from app.services.audit import log_action
 from app.core.security import rate_limit, make_key
 from app.core.utils import get_cached_business, set_cached_business

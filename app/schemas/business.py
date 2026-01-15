@@ -1,14 +1,6 @@
 from pydantic import BaseModel, EmailStr
 from typing import Literal
 
-
-class BusinessCreate(BaseModel):
-    name: str
-    email: EmailStr
-    password: str
-    tier: Literal["free", "pro"]
-
-
 class BusinessOut(BaseModel):
     id: int
     name: str
