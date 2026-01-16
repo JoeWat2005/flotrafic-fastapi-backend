@@ -67,7 +67,11 @@ def get_public_business(
             "primary_color": cust.primary_color if cust else "#000000",
             "secondary_color": cust.secondary_color if cust else "#ffffff",
             "accent_color": cust.accent_color if cust else "#2563eb",
-            "logo_url": cust.logo_url if cust else None,
+            "logo_url": (
+                f"/media/{cust.logo_path}"
+                if cust and cust.logo_path
+                else None
+            ),
             "font_family": cust.font_family if cust else "Inter",
 
             "hero_title": cust.hero_title if cust else "Professional services you can trust",
@@ -162,7 +166,6 @@ def create_public_enquiry(
 
     send_enquiry_notification(
         business_email=business.email,
-        business_name=business.name,
         customer_name=payload.name,
         customer_email=payload.email,
         message=payload.message,
