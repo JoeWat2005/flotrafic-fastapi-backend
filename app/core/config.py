@@ -40,11 +40,13 @@ TIERS = {
     "free": {
         "enquiries": True,
         "bookings": True,
+        "customisation": True,
         "autopilot": False,
     },
     "pro": {
         "enquiries": True,
         "bookings": True,
+        "customisation": True,
         "autopilot": True,
     },
 }

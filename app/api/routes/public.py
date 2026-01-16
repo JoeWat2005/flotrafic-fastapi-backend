@@ -188,7 +188,7 @@ def track_visit(
     business = (
         db.query(Business)
         .filter(
-            Business.id == payload.business_id,
+            Business.slug == payload.slug,
             Business.is_active.is_(True),
         )
         .first()
@@ -199,6 +199,7 @@ def track_visit(
 
     visit = Visit(
         business_id=business.id,
+        ip_address=ip,
         path=payload.path or "/",
         user_agent=payload.user_agent,
     )

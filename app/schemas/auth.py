@@ -54,7 +54,7 @@ class VerifyEmailCodeRequest(BaseModel):
 
 
 #Payload used to reset a password after email verification
-class ResetPasswordRequest(BaseModel):
+class PasswordResetConfirmRequest(BaseModel):
     email: EmailStr
     code: str
     new_password: str
@@ -69,3 +69,6 @@ class ResetPasswordRequest(BaseModel):
                 "a number and a symbol"
             )
         return v
+    
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
