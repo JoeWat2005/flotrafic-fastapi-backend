@@ -7,7 +7,7 @@ from app.db.session import get_db
 from app.db.models import Business
 from app.api.deps import get_current_business
 from app.services.audit import log_action
-from app.core.config import settings
+from app.core.config import settings, apply_subscription_state
 from app.core.utils import _safe_stripe_subscription_refresh
 
 router = APIRouter(
@@ -74,7 +74,16 @@ def create_checkout(
 @router.get("/overview")
 def billing_overview(
     business: Business = Depends(get_current_business),
+    db: Session = Depends(get_db),
 ):
+    _safe_stripe_subscription_refresh(business)
+
+    apply_subscription_state(
+        business,
+        business.stripe_subscription_status,
+    )
+    db.commit()
+
     return {
         "tier": business.tier,
         "subscription_status": business.stripe_subscription_status,
@@ -83,8 +92,16 @@ def billing_overview(
             if business.stripe_current_period_end
             else None
         ),
+        "cancel_at_period_end": business.stripe_cancel_at_period_end,
+        "grace_period_ends_at": (
+            business.grace_period_ends_at.astimezone(timezone.utc).isoformat()
+            if business.grace_period_ends_at
+            else None
+        ),
         "is_active": business.is_active,
+        "email_verified": business.email_verified,
     }
+
 
 
 #Launch the Stripe customer billing portal for subscription management
@@ -101,3 +118,17 @@ def billing_portal(
     )
 
     return {"url": session.url}
+
+@router.post("/cancel")
+def cancel_subscription(
+    business: Business = Depends(get_current_business),
+):
+    if not business.stripe_subscription_id:
+        raise HTTPException(400, "No active subscription")
+
+    stripe.Subscription.modify(
+        business.stripe_subscription_id,
+        cancel_at_period_end=True,
+    )
+
+    return {"status": "cancelled_at_period_end"}

@@ -70,12 +70,14 @@ class Business(Base):
     tier = Column(TierEnum, nullable=False, default="free")
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
+    grace_period_ends_at = Column(DateTime(timezone=True), nullable=True)
 
     #Stripe subscription metadata
     stripe_customer_id = Column(String, nullable=True, index=True)
     stripe_subscription_id = Column(String, nullable=True, index=True)
     stripe_subscription_status = Column(SubscriptionStatusEnum, nullable=True)
     stripe_current_period_end = Column(DateTime(timezone=True), nullable=True)
+    stripe_cancel_at_period_end = Column(Boolean, default=False)
 
     #Email verification state
     email_verified = Column(Boolean, nullable=False, default=False)

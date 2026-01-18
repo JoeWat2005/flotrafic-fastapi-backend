@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field
 import re
-
+from datetime import datetime, timedelta, timezone
 
 """
 API CONFIGURATION
@@ -33,6 +33,36 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+STRIPE_GRACE_PERIOD_DAYS = 7
+
+def apply_subscription_state(business, stripe_status: str):
+    now = datetime.now(timezone.utc)
+    business.stripe_subscription_status = stripe_status
+
+    # Healthy subscription → always pro
+    if stripe_status in ("active", "trialing"):
+        business.tier = "pro"
+        business.grace_period_ends_at = None
+        return
+
+    # Payment failed → start / continue grace period
+    if stripe_status == "past_due":
+        if not business.grace_period_ends_at:
+            business.grace_period_ends_at = now + timedelta(
+                days=settings.STRIPE_GRACE_PERIOD_DAYS
+            )
+
+        if now <= business.grace_period_ends_at:
+            business.tier = "pro"
+        else:
+            business.tier = "free"
+
+        return
+
+    # Anything else → free, no grace
+    business.tier = "free"
+    business.grace_period_ends_at = None
 
 
 #Acccount subscription tiers

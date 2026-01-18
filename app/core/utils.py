@@ -65,12 +65,17 @@ def _safe_stripe_subscription_refresh(business: Business):
 
     try:
         sub = stripe.Subscription.retrieve(business.stripe_subscription_id)
-        business.stripe_subscription_status = getattr(sub, "status", None)
+
+        business.stripe_subscription_status = sub.status
         business.stripe_current_period_end = _ts_to_dt(
-            getattr(sub, "current_period_end", None)
+            sub.current_period_end
+        )
+        business.stripe_cancel_at_period_end = bool(
+            sub.cancel_at_period_end
         )
 
     except Exception:
+        # Never break billing if Stripe is temporarily unavailable
         return
     
 

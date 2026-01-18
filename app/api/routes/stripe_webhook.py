@@ -12,7 +12,7 @@ from app.services.email import (
     send_account_paused_email,
     send_subscription_plan_changed_email,
 )
-from app.core.config import settings
+from app.core.config import settings, apply_subscription_state
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 WEBHOOK_SECRET = settings.STRIPE_WEBHOOK_SECRET
@@ -56,13 +56,13 @@ async def stripe_webhook(request: Request):
         obj = (event.get("data") or {}).get("object") or {}
         handled = False
 
-        #handle duplicate events
-        already_handled = db.get(StripeEvent, event_id)
-        if already_handled:
+        # Prevent duplicate webhook processing
+        if db.get(StripeEvent, event_id):
             return {"status": "ok", "handled": True, "duplicate": True}
 
-
-        #Handle successful checkout completion and subscription activation
+        # ------------------------------------------------------------------
+        # CHECKOUT COMPLETED
+        # ------------------------------------------------------------------
         if event_type == "checkout.session.completed":
             metadata = obj.get("metadata") or {}
             business_id = metadata.get("business_id")
@@ -79,41 +79,29 @@ async def stripe_webhook(request: Request):
 
                 _safe_stripe_subscription_refresh(business)
 
-                if business.stripe_subscription_status in ("active", "trialing"):
-                    business.is_active = True
-
-                    send_subscription_activated_email(
-                        business_email=business.email,
-                        tier=metadata.get("tier", "foundation"),
-                    )
+                apply_subscription_state(
+                    business,
+                    business.stripe_subscription_status,
+                )
 
                 log_action(
                     db=db,
                     actor_type="system",
                     actor_id=business.id,
                     action="billing.subscription_created",
-                    details=f"tier={metadata.get('tier')}",
+                    details=f"tier={business.tier}",
+                )
+
+                send_subscription_activated_email(
+                    business_email=business.email,
+                    tier=business.tier,
                 )
 
                 handled = True
 
-        elif event_type == "invoice.paid":
-            sub_id = obj.get("subscription")
-
-            business = (
-                db.query(Business)
-                .filter(Business.stripe_subscription_id == sub_id)
-                .first()
-                if sub_id
-                else None
-            )
-
-            if business:
-                _safe_stripe_subscription_refresh(business)
-                business.is_active = True
-                handled = True
-
-        #Handle subscription updates including tier changes
+        # ------------------------------------------------------------------
+        # SUBSCRIPTION UPDATED (PRIMARY SOURCE OF TRUTH)
+        # ------------------------------------------------------------------
         elif event_type == "customer.subscription.updated":
             sub_id = obj.get("id")
 
@@ -124,71 +112,33 @@ async def stripe_webhook(request: Request):
             )
 
             if business:
-                old_tier = business.tier
-
-                status = obj.get("status")
-                business.stripe_subscription_status = status
                 business.stripe_current_period_end = _ts_to_dt(
                     obj.get("current_period_end")
                 )
 
-                if status in ("active", "trialing"):
-                    new_tier = "pro"
-                    business.is_active = True
-                else:
-                    new_tier = "free"
-                    business.is_active = False
+                old_tier = business.tier
+                apply_subscription_state(business, obj.get("status"))
 
-                business.tier = new_tier
+                if old_tier != business.tier:
+                    log_action(
+                        db=db,
+                        actor_type="system",
+                        actor_id=business.id,
+                        action="billing.tier_updated",
+                        details=f"{old_tier}->{business.tier}",
+                    )
 
-                log_action(
-                    db=db,
-                    actor_type="system",
-                    actor_id=business.id,
-                    action="billing.tier_updated",
-                    details=f"{old_tier}->{new_tier}",
-                )
-
-                if old_tier != new_tier:
                     send_subscription_plan_changed_email(
                         business_email=business.email,
                         old_tier=old_tier,
-                        new_tier=new_tier,
+                        new_tier=business.tier,
                     )
 
                 handled = True
 
-
-        #Handle subscription cancellation events
-        elif event_type == "customer.subscription.deleted":
-            sub_id = obj.get("id")
-
-            business = (
-                db.query(Business)
-                .filter(Business.stripe_subscription_id == sub_id)
-                .first()
-            )
-
-            if business:
-                business.tier = "free"
-                business.is_active = True
-                business.stripe_subscription_status = "canceled"
-
-                log_action(
-                    db=db,
-                    actor_type="system",
-                    actor_id=business.id,
-                    action="billing.subscription_cancelled",
-                )
-
-                send_subscription_cancelled_email(
-                    business_email=business.email
-                )
-
-                handled = True
-
-
-        #Handle failed payments and pause affected accounts
+        # ------------------------------------------------------------------
+        # PAYMENT FAILED → START / CONTINUE GRACE PERIOD
+        # ------------------------------------------------------------------
         elif event_type == "invoice.payment_failed":
             sub_id = obj.get("subscription")
             cust_id = obj.get("customer")
@@ -209,8 +159,7 @@ async def stripe_webhook(request: Request):
                 )
 
             if business:
-                business.is_active = False
-                business.stripe_subscription_status = "past_due"
+                apply_subscription_state(business, "past_due")
 
                 log_action(
                     db=db,
@@ -225,8 +174,62 @@ async def stripe_webhook(request: Request):
 
                 handled = True
 
+        # ------------------------------------------------------------------
+        # SUBSCRIPTION CANCELLED
+        # ------------------------------------------------------------------
+        elif event_type == "customer.subscription.deleted":
+            sub_id = obj.get("id")
+
+            business = (
+                db.query(Business)
+                .filter(Business.stripe_subscription_id == sub_id)
+                .first()
+            )
+
+            if business:
+                apply_subscription_state(business, "canceled")
+
+                log_action(
+                    db=db,
+                    actor_type="system",
+                    actor_id=business.id,
+                    action="billing.subscription_cancelled",
+                )
+
+                send_subscription_cancelled_email(
+                    business_email=business.email
+                )
+
+                handled = True
+
+        # ------------------------------------------------------------------
+        # INVOICE PAID → STRIPE MAY RECOVER SUBSCRIPTION
+        # ------------------------------------------------------------------
+        elif event_type == "invoice.paid":
+            sub_id = obj.get("subscription")
+
+            business = (
+                db.query(Business)
+                .filter(Business.stripe_subscription_id == sub_id)
+                .first()
+            )
+
+            if business:
+                _safe_stripe_subscription_refresh(business)
+
+                apply_subscription_state(
+                    business,
+                    business.stripe_subscription_status,
+                )
+
+                handled = True
+
+        # ------------------------------------------------------------------
+        # RECORD EVENT + COMMIT
+        # ------------------------------------------------------------------
         db.add(StripeEvent(event_id=event_id))
         db.commit()
+
         return {"status": "ok", "handled": handled}
 
     finally:
