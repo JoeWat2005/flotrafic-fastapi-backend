@@ -167,7 +167,6 @@ class Booking(Base):
     __table_args__ = (
         Index("ix_booking_business_time", "business_id", "start_time", "end_time"),
         CheckConstraint("end_time > start_time", name="ck_booking_time_valid"),
-        UniqueConstraint("enquiry_id", name="ud_booking_enquiry"),
     )
 
 

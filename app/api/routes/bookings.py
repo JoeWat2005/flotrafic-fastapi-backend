@@ -40,7 +40,10 @@ def get_bookings(
 ):
     now = datetime.now(timezone.utc)
 
-    query = db.query(Booking).filter(Booking.business_id == business.id)
+    query = db.query(Booking).filter(
+        Booking.business_id == business.id,
+        Booking.status != "cancelled",
+        )
 
     if status:
         query = query.filter(Booking.status == status)
@@ -162,9 +165,18 @@ def create_booking_from_enquiry(
     if not enquiry:
         raise HTTPException(404, "Enquiry not found")
 
-    existing = db.query(Booking).filter(Booking.enquiry_id == enquiry.id).first()
+    existing = db.query(Booking).filter(
+        Booking.enquiry_id == enquiry.id,
+        Booking.status != "cancelled"
+        ).first()
     if existing:
         raise HTTPException(400, "This enquiry already has a booking")
+    
+    if payload.end_time <= payload.start_time:
+        raise HTTPException(
+            400,
+            "End time must be after start time",
+        )
 
     booking = Booking(
         business_id=business.id,
