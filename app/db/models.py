@@ -75,9 +75,12 @@ class Business(Base):
     #Stripe subscription metadata
     stripe_customer_id = Column(String, nullable=True, index=True)
     stripe_subscription_id = Column(String, nullable=True, index=True)
-    stripe_subscription_status = Column(SubscriptionStatusEnum, nullable=True)
     stripe_current_period_end = Column(DateTime(timezone=True), nullable=True)
     stripe_cancel_at_period_end = Column(Boolean, default=False)
+    stripe_ended_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Authoritative access expiry from invoices
+    latest_paid_period_end = Column(DateTime(timezone=True), nullable=True)
 
     #Email verification state
     email_verified = Column(Boolean, nullable=False, default=False)

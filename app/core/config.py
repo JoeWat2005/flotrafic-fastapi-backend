@@ -36,33 +36,38 @@ settings = Settings()
 
 STRIPE_GRACE_PERIOD_DAYS = 7
 
-def apply_subscription_state(business, stripe_status: str):
+def apply_subscription_state(business, stripe_status: str | None = None):
+    # Canonical Access Logic
     now = datetime.now(timezone.utc)
-    business.stripe_subscription_status = stripe_status
+    
+    # 1. Access Rule: Invoice-Driven
+    # If the user has paid for time that covers now, they have access.
+    invoice_covers_now = False
+    if business.latest_paid_period_end and business.latest_paid_period_end > now:
+        invoice_covers_now = True
 
-    # Healthy subscription → always pro
-    if stripe_status in ("active", "trialing"):
+    # 2. Fallback Rule: Subscription Status
+    # If invoice data is missing/stale but subscription is demonstrably active and not ended.
+    # Note: "canceled" status means it's over (unless invoice covers it). 
+    # "past_due" usually means grace period or retry, we treat as active for access until fully canceled/unpaid.
+    current_status = stripe_status if stripe_status else business.stripe_subscription_status
+    sub_is_live = (
+        current_status in ("active", "trialing", "past_due")
+        and not business.stripe_ended_at  # Must not be hard-ended
+    )
+    
+    has_pro_access = invoice_covers_now or sub_is_live
+
+    # Update Tier & Active Flags
+    if has_pro_access:
         business.tier = "pro"
+        business.is_active = True
         business.grace_period_ends_at = None
-        return
+    else:
+        business.tier = "free"
+        business.is_active = True
+        business.grace_period_ends_at = None
 
-    # Payment failed → start / continue grace period
-    if stripe_status == "past_due":
-        if not business.grace_period_ends_at:
-            business.grace_period_ends_at = now + timedelta(
-                days=settings.STRIPE_GRACE_PERIOD_DAYS
-            )
-
-        if now <= business.grace_period_ends_at:
-            business.tier = "pro"
-        else:
-            business.tier = "free"
-
-        return
-
-    # Anything else → free, no grace
-    business.tier = "free"
-    business.grace_period_ends_at = None
 
 
 #Acccount subscription tiers
