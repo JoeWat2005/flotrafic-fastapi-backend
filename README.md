@@ -1,8 +1,11 @@
+> [!WARNING]
+> **Deprecated: no longer maintained.** Last updated in February 2026; kept for reference.
+
 # Flotrafic API (FastAPI)
 
 FastAPI backend for Flotrafic, providing business accounts, public business websites, enquiries, bookings, Stripe subscriptions and transactional email.
 
-Status: beta, last updated February 2026. This is a rebuild of the original [Flask backend](https://github.com/JoeWat2005/flotrafic-flask-backend). Flotrafic is an earlier product that preceded [DeskCaptain](https://github.com/JoeWat2005/deskcaptain).
+Status: deprecated beta, last updated February 2026. This is a rebuild of the original [Flask backend](https://github.com/JoeWat2005/flotrafic-flask-backend). Flotrafic is an earlier product that preceded [DeskCaptain](https://github.com/JoeWat2005/deskcaptain).
 
 ## Features
 
